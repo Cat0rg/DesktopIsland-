@@ -3,13 +3,11 @@ chcp 65001 >nul
 title Обновление Desktop Island
 
 :: =====================================================================
-:: Впишите ниже прямую ссылку на новый архив (.zip) или файл (.exe),
-:: например ссылку на GitHub Releases:
-:: set "UPDATE_URL=https://github.com/ВАШ_НИК/DesktopIsland/releases/latest/download/DesktopIsland_Installer_v1.3.zip"
+:: Прямая ссылка на последний релиз DesktopIsland.zip в GitHub Releases:
 :: Если рядом с этим батником уже лежит папка App\DesktopIsland.exe,
-:: обновление установится из неё автоматически даже без ссылки.
+:: обновление установится из неё автоматически даже без скачивания.
 :: =====================================================================
-set "UPDATE_URL="
+set "UPDATE_URL=https://github.com/Cat0rg/DesktopIsland-/releases/latest/download/DesktopIsland.zip"
 
 net session >nul 2>&1
 if %errorlevel% neq 0 (

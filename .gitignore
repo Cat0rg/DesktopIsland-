@@ -1,0 +1,11 @@
+# Build & runtime outputs
+App/
+Config/
+Logs/
+_InstallerBuild/
+Source/bin/
+Source/obj/
+*.zip
+*.user
+*.suo
+.vs/

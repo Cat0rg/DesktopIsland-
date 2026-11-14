@@ -211,6 +211,35 @@
                                         <ComboBoxItem Content="Изумруд (Emerald)" Tag="Emerald"/>
                                         <ComboBoxItem Content="Неон-фиолет (Violet)" Tag="Violet"/>
                                         <ComboBoxItem Content="Янтарь (Amber)" Tag="Amber"/>
+                                        <ComboBoxItem Content="Роза (Rose)" Tag="Rose"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="175"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Стиль рамки:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="BorderStyleCombo" Grid.Column="1" Height="28">
+                                        <ComboBoxItem Content="Классика (Glass)" Tag="Glass"/>
+                                        <ComboBoxItem Content="Неон-акцент (Neon)" Tag="Neon"/>
+                                        <ComboBoxItem Content="Минимал (без контура)" Tag="Minimal"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="175"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Основная валюта:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="CurrencyCombo" Grid.Column="1" Height="28">
+                                        <ComboBoxItem Content="Гривна (UAH ₴)" Tag="UAH"/>
+                                        <ComboBoxItem Content="Доллар (USD $)" Tag="USD"/>
+                                        <ComboBoxItem Content="Евро (EUR €)" Tag="EUR"/>
+                                        <ComboBoxItem Content="Злотый (PLN zł)" Tag="PLN"/>
+                                        <ComboBoxItem Content="Рубль (RUB ₽)" Tag="RUB"/>
                                     </ComboBox>
                                 </Grid>
 
@@ -242,8 +271,13 @@
                                 <CheckBox x:Name="GameClickThroughChk" Content="В игре пропускать клики сквозь островок (Alt для управления)" Margin="18,2,0,4"/>
                                 <CheckBox x:Name="GameAutoBoostChk" Content="Авто-буст при входе в игру (трим фоновой ОЗУ + High Perf)" Margin="18,2,0,4"/>
                                 <CheckBox x:Name="GameGpuTempChk" Content="Показывать GPU % и температуру в игре и во вкладке Система" Margin="18,2,0,4"/>
-                                <CheckBox x:Name="GameMicMuteChk" Content="Быстрая кнопка Mute микрофона рядом с островком в игре" Margin="18,2,0,6"/>
-                                <CheckBox x:Name="DimVideoChk" Content="Полупрозрачность (30%) поверх полноэкранного видео"/>
+                                <CheckBox x:Name="GameMicMuteChk" Content="Быстрая кнопка Mute микрофона рядом с островком в игре" Margin="18,2,0,4"/>
+                                <CheckBox x:Name="GameReplayBtnChk" Content="Кнопка мгновенного 30с клипа (Alt+F10 / Win+Alt+G) в игре" Margin="18,2,0,6"/>
+                                <CheckBox x:Name="DimVideoChk" Content="Кино-режим: скрываться/тускнеть (12%) поверх фуллскрин-видео"/>
+                                <CheckBox x:Name="SuperMiniIdleChk" Content="Супер-мини полоска при простое на рабочем столе (разворачивается при подведении мыши)"/>
+                                <CheckBox x:Name="MusicOnlyFilterChk" Content="Анимация режима музыки только для музыкальных сервисов (Spotify, SoundCloud, YT Music)"/>
+                                <CheckBox x:Name="LayoutCapsChk" Content="Микро-индикатор переключения раскладки (RU/EN) и Caps Lock"/>
+                                <CheckBox x:Name="StreamPrivacyAutoChk" Content="Авто-щит приватности (REC) при запуске OBS / записи экрана"/>
                             </StackPanel>
                         </Border>
 

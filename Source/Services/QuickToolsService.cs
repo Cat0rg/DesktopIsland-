@@ -1,10 +1,12 @@
 using System;
 using System.Diagnostics;
 using System.Net.Http;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using DesktopIsland.Models;
+using Microsoft.Win32;
 
 namespace DesktopIsland.Services;
 
@@ -114,6 +116,100 @@ public static class QuickToolsService
         try { Process.Start(new ProcessStartInfo("ms-screenclip:") { UseShellExecute = true }); } catch { }
     }
 
+    public static bool IsDoNotDisturbEnabled()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings");
+            if (key?.GetValue("NOC_GLOBAL_SETTING_TOASTS_ENABLED") is int v)
+                return v == 0;
+        }
+        catch { }
+        return false;
+    }
+
+    public static bool ToggleDoNotDisturb()
+    {
+        try
+        {
+            bool nextDnd = !IsDoNotDisturbEnabled();
+            using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings");
+            key.SetValue("NOC_GLOBAL_SETTING_TOASTS_ENABLED", nextDnd ? 0 : 1, RegistryValueKind.DWord);
+            return nextDnd;
+        }
+        catch { return false; }
+    }
+
+    public static bool IsHighPerformancePlanActive()
+    {
+        try
+        {
+            var activeOut = RunPowerCfg("/GETACTIVESCHEME");
+            if (string.IsNullOrEmpty(activeOut)) return false;
+            return activeOut.Contains("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", StringComparison.OrdinalIgnoreCase)
+                || activeOut.Contains("e9a42b02-d5df-448d-aa00-03f14749eb61", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    public static bool ToggleHighPerformancePlan()
+    {
+        const string balancedGuid = "381b4222-f694-41f0-9685-ff5bb260df2e";
+        const string highPerfGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+        const string ultimatePerfGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+        try
+        {
+            if (IsHighPerformancePlanActive())
+            {
+                RunPowerCfg($"/SETACTIVE {balancedGuid}");
+                return false;
+            }
+
+            var listOut = RunPowerCfg("/LIST") ?? string.Empty;
+            string? target = listOut.Contains(ultimatePerfGuid, StringComparison.OrdinalIgnoreCase)
+                ? ultimatePerfGuid
+                : (listOut.Contains(highPerfGuid, StringComparison.OrdinalIgnoreCase) ? highPerfGuid : null);
+            if (target != null)
+            {
+                RunPowerCfg($"/SETACTIVE {target}");
+                return true;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    public static async Task<(bool HasUpdate, string LatestTag, string ReleaseUrl)> CheckForGithubUpdateAsync()
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/Cat0rg/DesktopIsland-/releases/latest");
+            req.Headers.UserAgent.ParseAdd("DesktopIsland/1.4");
+            using var resp = await Http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return (false, string.Empty, string.Empty);
+
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("tag_name", out var tagEl)) return (false, string.Empty, string.Empty);
+            string tag = tagEl.GetString() ?? string.Empty;
+            string cleanTag = tag.TrimStart('v', 'V');
+            string htmlUrl = doc.RootElement.TryGetProperty("html_url", out var urlEl)
+                ? (urlEl.GetString() ?? "https://github.com/Cat0rg/DesktopIsland-/releases/latest")
+                : "https://github.com/Cat0rg/DesktopIsland-/releases/latest";
+
+            var currentVer = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 4, 0, 0);
+            if (Version.TryParse(cleanTag, out var remoteVer))
+            {
+                var normCur = new Version(currentVer.Major, currentVer.Minor, Math.Max(0, currentVer.Build));
+                var normRem = new Version(remoteVer.Major, remoteVer.Minor, Math.Max(0, remoteVer.Build));
+                if (normRem > normCur)
+                    return (true, tag, htmlUrl);
+            }
+        }
+        catch { }
+        return (false, string.Empty, string.Empty);
+    }
+
     public static void LockPc()
     {
         try { LockWorkStation(); } catch { }
@@ -128,6 +224,8 @@ public static class QuickToolsService
     {
         try { SendMessage(HWND_BROADCAST, WM_SYSCOMMAND, new IntPtr(SC_MONITORPOWER), new IntPtr(2)); } catch { }
     }
+
+    public static void ShutdownPc() => HardwareAndUtilityService.ShutdownPc();
 
     private static string? _savedPowerSchemeGuid;
 
@@ -227,18 +325,37 @@ public static class QuickToolsService
                 lon = first.GetProperty("longitude").GetDouble();
             }
 
-            var weatherUrl = $"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={lon.ToString(System.Globalization.CultureInfo.InvariantCulture)}&current_weather=true";
+            var weatherUrl = $"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={lon.ToString(System.Globalization.CultureInfo.InvariantCulture)}&current_weather=true&hourly=precipitation_probability,weathercode&forecast_hours=2";
             var wJson = await Http.GetStringAsync(weatherUrl);
             using var wDoc = JsonDocument.Parse(wJson);
             var cw = wDoc.RootElement.GetProperty("current_weather");
             double temp = cw.GetProperty("temperature").GetDouble();
             int code = cw.GetProperty("weathercode").GetInt32();
 
+            string? rainAlert = null;
+            try
+            {
+                bool currentlyWet = code >= 51;
+                if (!currentlyWet && wDoc.RootElement.TryGetProperty("hourly", out var hourly))
+                {
+                    if (hourly.TryGetProperty("precipitation_probability", out var probs) && probs.GetArrayLength() >= 2)
+                    {
+                        int p1 = probs[0].GetInt32();
+                        int p2 = probs[1].GetInt32();
+                        int maxProb = Math.Max(p1, p2);
+                        if (maxProb >= 60)
+                            rainAlert = $"В ближайший час возможны осадки ({maxProb}%)";
+                    }
+                }
+            }
+            catch { }
+
             return new WeatherInfo
             {
                 City = cityName,
                 TempC = temp,
-                IconGlyph = MapWmoCode(code)
+                IconGlyph = MapWmoCode(code),
+                RainAlertText = rainAlert
             };
         }
         catch

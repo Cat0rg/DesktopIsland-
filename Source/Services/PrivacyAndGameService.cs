@@ -37,15 +37,20 @@ public static class PrivacyAndGameService
 
     public static PrivacyStatusInfo GetActiveMicAndCamera()
     {
+        // Primary mic truth: active WASAPI audio capture session (prevents stale Windows Registry ghosts)
+        string? liveMic = CoreAudioService.GetActiveCaptureProcessName();
+        if (string.IsNullOrEmpty(liveMic))
+            liveMic = FindActiveCapabilityApp(@"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone", verifyRunningForNonPackaged: true, skipNonPackagedIfNoLiveAudio: true);
+
         var info = new PrivacyStatusInfo
         {
-            MicApp = FindActiveCapabilityApp(@"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"),
-            CameraApp = FindActiveCapabilityApp(@"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam")
+            MicApp = liveMic,
+            CameraApp = FindActiveCapabilityApp(@"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam", verifyRunningForNonPackaged: true, skipNonPackagedIfNoLiveAudio: false)
         };
         return info;
     }
 
-    private static string? FindActiveCapabilityApp(string regSubKey)
+    private static string? FindActiveCapabilityApp(string regSubKey, bool verifyRunningForNonPackaged, bool skipNonPackagedIfNoLiveAudio)
     {
         try
         {
@@ -56,13 +61,19 @@ public static class PrivacyAndGameService
             {
                 if (name.Equals("NonPackaged", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (skipNonPackagedIfNoLiveAudio) continue;
                     using var np = baseKey.OpenSubKey("NonPackaged");
                     if (np == null) continue;
                     foreach (var npName in np.GetSubKeyNames())
                     {
                         using var sub = np.OpenSubKey(npName);
                         if (IsStopZero(sub))
-                            return ExtractFriendlyName(npName);
+                        {
+                            var friendly = ExtractFriendlyName(npName);
+                            if (verifyRunningForNonPackaged && !IsProcessCurrentlyRunning(friendly))
+                                continue;
+                            return friendly;
+                        }
                     }
                 }
                 else
@@ -75,6 +86,22 @@ public static class PrivacyAndGameService
         }
         catch { }
         return null;
+    }
+
+    private static bool IsProcessCurrentlyRunning(string processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName)) return false;
+        try
+        {
+            var procs = System.Diagnostics.Process.GetProcessesByName(processName);
+            bool alive = procs.Length > 0;
+            foreach (var p in procs) p.Dispose();
+            return alive;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsStopZero(RegistryKey? key)

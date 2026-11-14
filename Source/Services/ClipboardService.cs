@@ -24,6 +24,7 @@ public class ClipboardService : IDisposable
     private bool _enabled = true;
     private int _maxItems = 20;
 
+    public event Action<string>? ClipboardTextCopied;
     public ObservableCollection<ClipboardEntry> Entries { get; } = new();
 
     public void Attach(Window window, bool enabled, int maxItems, IEnumerable<ClipboardEntry>? pinned = null)
@@ -170,6 +171,7 @@ public class ClipboardService : IDisposable
                 Entries.Insert(insertIndex, new ClipboardEntry { Text = text, Timestamp = DateTime.Now, IsPinned = false });
             }
             TrimExcess();
+            ClipboardTextCopied?.Invoke(text);
         }
         catch
         {

@@ -70,6 +70,21 @@ public partial class SettingsWindow : Window
             "Emerald" => 1,
             "Violet" => 2,
             "Amber" => 3,
+            "Rose" => 4,
+            _ => 0
+        };
+        BorderStyleCombo.SelectedIndex = _workingCopy.BorderStyle switch
+        {
+            "Neon" => 1,
+            "Minimal" => 2,
+            _ => 0
+        };
+        CurrencyCombo.SelectedIndex = _workingCopy.PreferredCurrency switch
+        {
+            "USD" => 1,
+            "EUR" => 2,
+            "PLN" => 3,
+            "RUB" => 4,
             _ => 0
         };
         DockToTopChk.IsChecked = _workingCopy.DockToTopEdge;
@@ -81,7 +96,12 @@ public partial class SettingsWindow : Window
         GameAutoBoostChk.IsChecked = _workingCopy.GameAutoBoost;
         GameGpuTempChk.IsChecked = _workingCopy.GameShowGpuTemp;
         GameMicMuteChk.IsChecked = _workingCopy.GameShowMicMute;
+        GameReplayBtnChk.IsChecked = _workingCopy.ShowReplayButtonInGame;
         DimVideoChk.IsChecked = _workingCopy.DimOnFullscreenVideo;
+        SuperMiniIdleChk.IsChecked = _workingCopy.SuperMiniOnIdle;
+        MusicOnlyFilterChk.IsChecked = _workingCopy.MusicFilterOnlyMusicApps;
+        LayoutCapsChk.IsChecked = _workingCopy.ShowLayoutAndCapsIndicator;
+        StreamPrivacyAutoChk.IsChecked = _workingCopy.StreamPrivacyAuto;
 
         EnableSysMonChk.IsChecked = _workingCopy.EnableSystemMonitor;
         EnableDiskMonChk.IsChecked = _workingCopy.EnableDiskMonitor;
@@ -225,6 +245,10 @@ public partial class SettingsWindow : Window
         _workingCopy.MonitorIndex = Math.Max(0, MonitorCombo.SelectedIndex);
         if (ThemeCombo.SelectedItem is ComboBoxItem themeItem && themeItem.Tag is string themeTag)
             _workingCopy.AccentTheme = themeTag;
+        if (BorderStyleCombo.SelectedItem is ComboBoxItem bsItem && bsItem.Tag is string bsTag)
+            _workingCopy.BorderStyle = bsTag;
+        if (CurrencyCombo.SelectedItem is ComboBoxItem curItem && curItem.Tag is string curTag)
+            _workingCopy.PreferredCurrency = curTag;
         _workingCopy.CapsuleOpacity = OpacitySlider.Value;
         _workingCopy.TopOffsetPx = int.TryParse(TopOffsetBox.Text, out var top) ? Math.Clamp(top, 0, 100) : 6;
         _workingCopy.DockToTopEdge = DockToTopChk.IsChecked == true;
@@ -236,7 +260,12 @@ public partial class SettingsWindow : Window
         _workingCopy.GameAutoBoost = GameAutoBoostChk.IsChecked == true;
         _workingCopy.GameShowGpuTemp = GameGpuTempChk.IsChecked == true;
         _workingCopy.GameShowMicMute = GameMicMuteChk.IsChecked == true;
+        _workingCopy.ShowReplayButtonInGame = GameReplayBtnChk.IsChecked == true;
         _workingCopy.DimOnFullscreenVideo = DimVideoChk.IsChecked == true;
+        _workingCopy.SuperMiniOnIdle = SuperMiniIdleChk.IsChecked == true;
+        _workingCopy.MusicFilterOnlyMusicApps = MusicOnlyFilterChk.IsChecked == true;
+        _workingCopy.ShowLayoutAndCapsIndicator = LayoutCapsChk.IsChecked == true;
+        _workingCopy.StreamPrivacyAuto = StreamPrivacyAutoChk.IsChecked == true;
 
         _workingCopy.EnableSystemMonitor = EnableSysMonChk.IsChecked == true;
         _workingCopy.EnableDiskMonitor = EnableDiskMonChk.IsChecked == true;
@@ -262,8 +291,11 @@ public partial class SettingsWindow : Window
 
     private void ResetHorizontalOffset_Click(object sender, RoutedEventArgs e)
     {
+        _workingCopy.DockEdge = "Top";
         _workingCopy.HorizontalOffsetPx = 0;
-        System.Windows.MessageBox.Show("Позиция по горизонтали будет сброшена в центр при сохранении.", "Desktop Island", MessageBoxButton.OK, MessageBoxImage.Information);
+        _workingCopy.VerticalOffsetPx = 0;
+        _workingCopy.ProcessDockProfiles.Clear();
+        System.Windows.MessageBox.Show("Позиция островка (для рабочего стола и игр) будет сброшена в центр верха экрана при сохранении.", "Desktop Island", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

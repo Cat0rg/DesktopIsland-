@@ -5,7 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using DesktopIsland.Models;
 
@@ -258,6 +260,8 @@ public class SystemMonitorService
         catch { }
 
         metrics.PingMs = _lastPingMs;
+        metrics.PingJitterMs = PingJitterMs;
+        metrics.PacketLossPercent = PacketLossPercent;
         if (includeGpu)
             SampleGpuMetrics(metrics);
         return metrics;
@@ -399,48 +403,148 @@ public class SystemMonitorService
         public uint dwOwningPid;
     }
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    private const uint Th32csSnapProcess = 0x00000002;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct PROCESSENTRY32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
     private int _lastPingMs = -1;
     private DateTime _lastPingAt = DateTime.MinValue;
     private bool _pingInFlight;
+    private readonly Queue<int> _recentPingWindow = new();
 
     public int LastPingMs => _lastPingMs;
+    public int PingJitterMs { get; private set; }
+    public int PacketLossPercent { get; private set; }
     public bool IsGameServerPing { get; private set; }
     public string PingTargetLabel { get; private set; } = "1.1.1.1";
 
-    private static string? FindGameServerIp(uint activePid)
+    private void RecordPingSample(int rttMs)
     {
-        if (activePid == 0) return null;
+        if (_recentPingWindow.Count >= 8)
+            _recentPingWindow.Dequeue();
+        _recentPingWindow.Enqueue(rttMs);
+
+        var samples = _recentPingWindow.ToArray();
+        int lost = samples.Count(s => s < 0);
+        PacketLossPercent = samples.Length > 0 ? (int)Math.Round(lost * 100.0 / samples.Length) : 0;
+
+        var valid = samples.Where(s => s > 0).ToArray();
+        if (valid.Length >= 2)
+        {
+            double diffSum = 0;
+            for (int i = 1; i < valid.Length; i++)
+                diffSum += Math.Abs(valid[i] - valid[i - 1]);
+            PingJitterMs = (int)Math.Round(diffSum / (valid.Length - 1));
+        }
+        else
+        {
+            PingJitterMs = 0;
+        }
+    }
+
+    private static HashSet<uint> CollectProcessTreePids(uint rootPid)
+    {
+        var pids = new HashSet<uint> { rootPid };
         try
         {
-            var targetPids = new HashSet<uint> { activePid };
+            string? rootName = null;
             try
             {
-                using var fgProc = Process.GetProcessById((int)activePid);
-                var pname = fgProc.ProcessName;
-                if (!string.IsNullOrEmpty(pname))
-                {
-                    foreach (var sibling in Process.GetProcessesByName(pname))
-                    {
-                        try { targetPids.Add((uint)sibling.Id); }
-                        finally { sibling.Dispose(); }
-                    }
-                }
+                using var fgProc = Process.GetProcessById((int)rootPid);
+                rootName = fgProc.ProcessName;
             }
             catch { }
 
+            IntPtr snap = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
+            if (snap != IntPtr.Zero && snap.ToInt64() != -1)
+            {
+                try
+                {
+                    var all = new List<(uint Pid, uint Parent, string Name)>();
+                    var entry = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>() };
+                    if (Process32First(snap, ref entry))
+                    {
+                        do
+                        {
+                            string exeName = Path.GetFileNameWithoutExtension(entry.szExeFile ?? string.Empty);
+                            all.Add((entry.th32ProcessID, entry.th32ParentProcessID, exeName));
+                            if (!string.IsNullOrEmpty(rootName) && exeName.Equals(rootName, StringComparison.OrdinalIgnoreCase))
+                                pids.Add(entry.th32ProcessID);
+                        }
+                        while (Process32Next(snap, ref entry));
+                    }
+
+                    // Expand children up to 2 hops
+                    for (int hop = 0; hop < 2; hop++)
+                    {
+                        foreach (var p in all)
+                        {
+                            if (pids.Contains(p.Parent))
+                                pids.Add(p.Pid);
+                        }
+                    }
+                }
+                finally
+                {
+                    CloseHandle(snap);
+                }
+            }
+        }
+        catch { }
+        return pids;
+    }
+
+    private static List<(string Ip, int Port)> FindGameServerEndpoints(uint activePid)
+    {
+        var result = new List<(string Ip, int Port)>();
+        if (activePid == 0) return result;
+        try
+        {
+            var targetPids = CollectProcessTreePids(activePid);
+
             int bufSize = 0;
             GetExtendedTcpTable(IntPtr.Zero, ref bufSize, false, 2 /* AF_INET */, 4 /* TCP_TABLE_OWNER_PID_CONNECTIONS */);
-            if (bufSize <= 0) return null;
+            if (bufSize <= 0) return result;
 
             IntPtr mem = Marshal.AllocHGlobal(bufSize);
             try
             {
                 if (GetExtendedTcpTable(mem, ref bufSize, false, 2, 4) != 0)
-                    return null;
+                    return result;
 
                 int count = Marshal.ReadInt32(mem);
                 int rowSize = Marshal.SizeOf<MIB_TCPROW_OWNER_PID>();
                 IntPtr rowPtr = IntPtr.Add(mem, 4);
+
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var nonWeb = new List<(string Ip, int Port)>();
+                var webFallback = new List<(string Ip, int Port)>();
 
                 for (int i = 0; i < count; i++)
                 {
@@ -460,8 +564,19 @@ public class SystemMonitorService
                     if (b[0] == 192 && b[1] == 168) continue;
                     if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) continue;
 
-                    return ip.ToString();
+                    int port = (ushort)IPAddress.NetworkToHostOrder((short)(row.dwRemotePort & 0xFFFF));
+                    string ipStr = ip.ToString();
+                    string key = $"{ipStr}:{port}";
+                    if (!seen.Add(key)) continue;
+
+                    if (port != 80 && port != 443)
+                        nonWeb.Add((ipStr, port));
+                    else
+                        webFallback.Add((ipStr, port));
                 }
+
+                result.AddRange(nonWeb);
+                result.AddRange(webFallback);
             }
             finally
             {
@@ -469,7 +584,24 @@ public class SystemMonitorService
             }
         }
         catch { }
-        return null;
+        return result;
+    }
+
+    private static async Task<int> MeasureTcpConnectRttAsync(string ip, int port, int timeoutMs = 850)
+    {
+        try
+        {
+            using var sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            using var cts = new CancellationTokenSource(timeoutMs);
+            var sw = Stopwatch.StartNew();
+            await sock.ConnectAsync(ip, port, cts.Token);
+            sw.Stop();
+            return Math.Max(1, (int)Math.Round(sw.Elapsed.TotalMilliseconds));
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     public async Task<int> SamplePingAsync(uint activePid = 0, bool isGame = false)
@@ -480,33 +612,60 @@ public class SystemMonitorService
         _pingInFlight = true;
         try
         {
-            string? gameIp = isGame ? FindGameServerIp(activePid) : null;
-            using var ping = new Ping();
-
-            if (!string.IsNullOrEmpty(gameIp))
+            var gameEndpoints = isGame ? FindGameServerEndpoints(activePid) : new List<(string Ip, int Port)>();
+            if (gameEndpoints.Count > 0)
             {
-                var gameReply = await ping.SendPingAsync(gameIp, 1000);
-                if (gameReply.Status == IPStatus.Success)
+                using var ping = new Ping();
+                foreach (var ep in gameEndpoints.Take(3))
                 {
-                    _lastPingMs = (int)gameReply.RoundtripTime;
-                    IsGameServerPing = true;
-                    PingTargetLabel = $"Сервер игры ({gameIp})";
-                    _lastPingAt = DateTime.UtcNow;
-                    return _lastPingMs;
+                    try
+                    {
+                        var reply = await ping.SendPingAsync(ep.Ip, 850);
+                        if (reply.Status == IPStatus.Success)
+                        {
+                            _lastPingMs = Math.Max(1, (int)reply.RoundtripTime);
+                            RecordPingSample(_lastPingMs);
+                            IsGameServerPing = true;
+                            PingTargetLabel = $"Сервер игры (ICMP {ep.Ip})";
+                            _lastPingAt = DateTime.UtcNow;
+                            return _lastPingMs;
+                        }
+                    }
+                    catch { }
+                }
+
+                // Many game relays/servers block ICMP: measure direct TCP handshake RTT to their active remote endpoint
+                foreach (var ep in gameEndpoints.Take(3))
+                {
+                    int tcpMs = await MeasureTcpConnectRttAsync(ep.Ip, ep.Port, 850);
+                    if (tcpMs > 0)
+                    {
+                        _lastPingMs = tcpMs;
+                        RecordPingSample(_lastPingMs);
+                        IsGameServerPing = true;
+                        PingTargetLabel = $"Сервер игры (TCP {ep.Ip}:{ep.Port})";
+                        _lastPingAt = DateTime.UtcNow;
+                        return _lastPingMs;
+                    }
                 }
             }
 
-            var reply = await ping.SendPingAsync("1.1.1.1", 1200);
-            _lastPingMs = reply.Status == IPStatus.Success ? (int)reply.RoundtripTime : -1;
+            using (var netPing = new Ping())
+            {
+                var reply = await netPing.SendPingAsync("1.1.1.1", 1200);
+                _lastPingMs = reply.Status == IPStatus.Success ? (int)reply.RoundtripTime : -1;
+                RecordPingSample(_lastPingMs);
+            }
             IsGameServerPing = false;
-            PingTargetLabel = string.IsNullOrEmpty(gameIp)
-                ? "Сеть (1.1.1.1)"
-                : $"1.1.1.1 ({gameIp} закрыт для ICMP)";
+            PingTargetLabel = gameEndpoints.Count == 0
+                ? (isGame ? "Сеть 1.1.1.1 (игра на чистом UDP без TCP-релея)" : "Сеть (1.1.1.1)")
+                : $"Сеть 1.1.1.1 ({gameEndpoints[0].Ip} скрывает ICMP/TCP)";
             _lastPingAt = DateTime.UtcNow;
         }
         catch
         {
             _lastPingMs = -1;
+            RecordPingSample(-1);
             IsGameServerPing = false;
             PingTargetLabel = "1.1.1.1";
             _lastPingAt = DateTime.UtcNow;
@@ -530,12 +689,21 @@ public class SystemMonitorService
                 try
                 {
                     if (p.Id <= 4) continue;
+                    string name = p.ProcessName;
+                    if (name.Equals("Memory Compression", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("Registry", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("Secure System", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("System", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("Idle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
                     double mb = p.WorkingSet64 / (1024.0 * 1024.0);
                     if (mb < 20) continue;
                     items.Add(new ProcessMetricItem
                     {
                         Pid = p.Id,
-                        Name = p.ProcessName,
+                        Name = name,
                         MemoryMb = mb
                     });
                 }

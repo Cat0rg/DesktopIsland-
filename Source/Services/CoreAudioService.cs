@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using DesktopIsland.Models;
 
@@ -12,6 +13,7 @@ public static class CoreAudioService
     private static readonly Guid CLSID_MMDeviceEnumerator = new("BCDE0395-E52F-467C-8E3D-C4579291692E");
     private static readonly Guid IID_IAudioEndpointVolume = new("5CDF2C82-841E-4546-9722-0CF74078229A");
     private static readonly Guid IID_IAudioMeterInformation = new("C02216F6-8C67-4B5B-9D00-D008E73E0064");
+    private static readonly Guid IID_IAudioSessionManager2 = new("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F");
     private static readonly Guid CLSID_PolicyConfigClient = new("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9");
 
     private enum EDataFlow { eRender = 0, eCapture = 1, eAll = 2 }
@@ -90,6 +92,61 @@ public static class CoreAudioService
     private interface IAudioMeterInformation
     {
         int GetPeakValue(out float pfPeak);
+    }
+
+    [ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioSessionManager2
+    {
+        [PreserveSig] int GetAudioSessionControl(IntPtr AudioSessionGuid, uint StreamFlags, out IntPtr SessionControl);
+        [PreserveSig] int GetSimpleAudioVolume(IntPtr AudioSessionGuid, uint StreamFlags, out IntPtr AudioVolume);
+        [PreserveSig] int GetSessionEnumerator(out IAudioSessionEnumerator SessionEnum);
+    }
+
+    [ComImport, Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioSessionEnumerator
+    {
+        [PreserveSig] int GetCount(out int SessionCount);
+        [PreserveSig] int GetSession(int SessionIndex, out IAudioSessionControl Session);
+    }
+
+    [ComImport, Guid("F4B1A599-7266-4319-A8CA-E70ACB11E8CD"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioSessionControl
+    {
+        [PreserveSig] int GetState(out int pRetVal);
+        [PreserveSig] int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+        [PreserveSig] int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+        [PreserveSig] int GetGroupingParam(out Guid pRetVal);
+        [PreserveSig] int SetGroupingParam(ref Guid Override, ref Guid EventContext);
+        [PreserveSig] int RegisterAudioSessionNotification(IntPtr NewNotifications);
+        [PreserveSig] int UnregisterAudioSessionNotification(IntPtr NewNotifications);
+    }
+
+    [ComImport, Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioSessionControl2
+    {
+        [PreserveSig] int GetState(out int pRetVal);
+        [PreserveSig] int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+        [PreserveSig] int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+        [PreserveSig] int GetGroupingParam(out Guid pRetVal);
+        [PreserveSig] int SetGroupingParam(ref Guid Override, ref Guid EventContext);
+        [PreserveSig] int RegisterAudioSessionNotification(IntPtr NewNotifications);
+        [PreserveSig] int UnregisterAudioSessionNotification(IntPtr NewNotifications);
+        [PreserveSig] int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int GetProcessId(out uint pRetVal);
+    }
+
+    [ComImport, Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ISimpleAudioVolume
+    {
+        [PreserveSig] int SetMasterVolume(float fLevel, ref Guid EventContext);
+        [PreserveSig] int GetMasterVolume(out float pfLevel);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid EventContext);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
     }
 
     [ComImport, Guid("F8679F50-850A-41CF-9C72-430F290290C8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -297,6 +354,59 @@ public static class CoreAudioService
         return list;
     }
 
+    public static string? GetActiveCaptureProcessName()
+    {
+        try
+        {
+            var en = CreateEnumerator();
+            if (en == null) return null;
+
+            // Enumerate all active capture devices (microphone, headset mic, line-in)
+            if (en.EnumAudioEndpoints(EDataFlow.eCapture, 1 /* DEVICE_STATE_ACTIVE */, out var col) != 0)
+                return null;
+
+            col.GetCount(out uint devCount);
+            var iidMgr = IID_IAudioSessionManager2;
+            uint ownPid = (uint)Environment.ProcessId;
+
+            for (uint d = 0; d < devCount; d++)
+            {
+                if (col.Item(d, out var dev) != 0 || dev == null) continue;
+                try
+                {
+                    if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+                        continue;
+
+                    if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+                        continue;
+
+                    sessionEnum.GetCount(out int count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (sessionEnum.GetSession(i, out var ctrl) != 0 || ctrl == null)
+                            continue;
+
+                        if (ctrl.GetState(out int state) == 0 && state == 1 /* AudioSessionStateActive */ &&
+                            ctrl is IAudioSessionControl2 c2 &&
+                            c2.GetProcessId(out uint pid) == 0 && pid != 0 && pid != ownPid)
+                        {
+                            try
+                            {
+                                using var proc = Process.GetProcessById((int)pid);
+                                if (!string.IsNullOrWhiteSpace(proc.ProcessName))
+                                    return proc.ProcessName;
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return null;
+    }
+
     public static bool SetDefaultPlaybackDevice(string deviceId)
     {
         try
@@ -317,5 +427,139 @@ public static class CoreAudioService
             LoggerService.Error($"Failed to switch audio device {deviceId}", ex);
         }
         return false;
+    }
+
+    public static string GetDefaultPlaybackDeviceId()
+    {
+        try
+        {
+            var en = CreateEnumerator();
+            if (en != null && en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var defDev) == 0)
+            {
+                defDev.GetId(out var id);
+                return id ?? string.Empty;
+            }
+        }
+        catch { }
+        return string.Empty;
+    }
+
+    public static List<AudioSessionItem> GetAudioRenderSessions()
+    {
+        var items = new List<AudioSessionItem>();
+        try
+        {
+            var en = CreateEnumerator();
+            if (en == null) return items;
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0 || dev == null)
+                return items;
+
+            var iidMgr = IID_IAudioSessionManager2;
+            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+                return items;
+
+            if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+                return items;
+
+            sessionEnum.GetCount(out int count);
+            int ownPid = Environment.ProcessId;
+            var seenPids = new HashSet<int>();
+
+            for (int i = 0; i < count; i++)
+            {
+                if (sessionEnum.GetSession(i, out var ctrl) != 0 || ctrl == null)
+                    continue;
+
+                if (ctrl.GetState(out int state) != 0 || state == 2 /* AudioSessionStateExpired */)
+                    continue;
+
+                if (ctrl is IAudioSessionControl2 c2 && c2.GetProcessId(out uint pid) == 0 && pid != 0 && pid != ownPid)
+                {
+                    if (!seenPids.Add((int)pid)) continue;
+                    string procName = $"PID {pid}";
+                    try
+                    {
+                        using var proc = Process.GetProcessById((int)pid);
+                        if (!string.IsNullOrWhiteSpace(proc.ProcessName))
+                            procName = proc.ProcessName;
+                    }
+                    catch { continue; }
+
+                    int volPct = 100;
+                    bool muted = false;
+                    if (ctrl is ISimpleAudioVolume sav)
+                    {
+                        sav.GetMasterVolume(out float lvl);
+                        sav.GetMute(out muted);
+                        volPct = Math.Clamp((int)Math.Round(lvl * 100f), 0, 100);
+                    }
+
+                    items.Add(new AudioSessionItem
+                    {
+                        Pid = (int)pid,
+                        ProcessName = procName,
+                        VolumePercent = volPct,
+                        IsMuted = muted
+                    });
+                }
+            }
+        }
+        catch { }
+        return items.OrderBy(a => a.ProcessName).Take(6).ToList();
+    }
+
+    public static void SetAppSessionVolume(int pid, int percent)
+    {
+        OperateOnAppSession(pid, sav =>
+        {
+            var ctx = Guid.Empty;
+            sav.SetMasterVolume(Math.Clamp(percent / 100f, 0f, 1f), ref ctx);
+            if (percent > 0) sav.SetMute(false, ref ctx);
+        });
+    }
+
+    public static bool ToggleAppSessionMute(int pid)
+    {
+        bool result = false;
+        OperateOnAppSession(pid, sav =>
+        {
+            sav.GetMute(out bool muted);
+            var ctx = Guid.Empty;
+            sav.SetMute(!muted, ref ctx);
+            result = !muted;
+        });
+        return result;
+    }
+
+    private static void OperateOnAppSession(int targetPid, Action<ISimpleAudioVolume> action)
+    {
+        try
+        {
+            var en = CreateEnumerator();
+            if (en == null) return;
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0 || dev == null)
+                return;
+
+            var iidMgr = IID_IAudioSessionManager2;
+            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+                return;
+
+            if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+                return;
+
+            sessionEnum.GetCount(out int count);
+            for (int i = 0; i < count; i++)
+            {
+                if (sessionEnum.GetSession(i, out var ctrl) == 0 &&
+                    ctrl is IAudioSessionControl2 c2 &&
+                    c2.GetProcessId(out uint pid) == 0 &&
+                    (int)pid == targetPid &&
+                    ctrl is ISimpleAudioVolume sav)
+                {
+                    action(sav);
+                }
+            }
+        }
+        catch { }
     }
 }

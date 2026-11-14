@@ -4,6 +4,13 @@ using MediaColor = System.Windows.Media.Color;
 
 namespace DesktopIsland.Models;
 
+public class IslandDockProfile
+{
+    public string DockEdge { get; set; } = "Top";
+    public double HorizontalOffsetPx { get; set; } = 0;
+    public double VerticalOffsetPx { get; set; } = 0;
+}
+
 public class PinnedApp
 {
     public string Name { get; set; } = string.Empty;
@@ -21,11 +28,24 @@ public class AppSettings
     public bool ExpandOnHover { get; set; } = true;
     public int HoverOutDelayMs { get; set; } = 360;
     public int MonitorIndex { get; set; } = 0;
+    public int PreferredRecordMonitorIndex { get; set; } = -1; // -1 = авто (основной / текущий экран)
     public int TopOffsetPx { get; set; } = 6;
     public double HorizontalOffsetPx { get; set; } = 0;
+    public double VerticalOffsetPx { get; set; } = 0;
+    public string DockEdge { get; set; } = "Top"; // Top, Left, Right
+    public Dictionary<string, IslandDockProfile> ProcessDockProfiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> GameAudioProfiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool DockToTopEdge { get; set; } = true;
     public double CapsuleOpacity { get; set; } = 0.96;
-    public string AccentTheme { get; set; } = "Sky"; // Sky, Emerald, Violet, Amber
+    public string AccentTheme { get; set; } = "Sky"; // Sky, Emerald, Violet, Amber, Rose
+    public string BorderStyle { get; set; } = "Glass"; // Glass, Neon, Minimal
+    public string PreferredMediaPlayer { get; set; } = "Auto"; // Auto, Spotify, SoundCloud
+    public bool MusicFilterOnlyMusicApps { get; set; } = true;
+    public bool SuperMiniOnIdle { get; set; } = true;
+    public bool ShowLayoutAndCapsIndicator { get; set; } = true;
+    public bool ShowReplayButtonInGame { get; set; } = true;
+    public bool StreamPrivacyAuto { get; set; } = true;
+    public string PreferredCurrency { get; set; } = "UAH";
 
     public bool EnableSystemMonitor { get; set; } = true;
     public bool EnableDiskMonitor { get; set; } = true;
@@ -87,6 +107,8 @@ public class SystemMetrics
     public uint ActivePid { get; set; }
     public string ActiveWindowTitle { get; set; } = string.Empty;
     public int PingMs { get; set; } = -1;
+    public int PingJitterMs { get; set; }
+    public int PacketLossPercent { get; set; }
     public double? GpuPercent { get; set; }
     public double? GpuTempC { get; set; }
 }
@@ -98,13 +120,25 @@ public class ScreenTimeItem
     public TimeSpan Duration { get; set; }
     public double SharePercent { get; set; }
     public double? AvgFps { get; set; }
+    public double? LowFps1Percent { get; set; }
     public string IconLabel => IsGame ? "🎮" : "🖥";
     public string DurationText => Duration.TotalHours >= 1
         ? $"{(int)Duration.TotalHours}ч {Duration.Minutes:D2}м"
         : (Duration.TotalMinutes >= 1 ? $"{(int)Duration.TotalMinutes}м" : $"{(int)Duration.TotalSeconds}с");
-    public string SubLabel => AvgFps.HasValue && AvgFps.Value >= 1
-        ? $"ср. {AvgFps.Value:F0} FPS · {DurationText}"
-        : DurationText;
+    public string SubLabel
+    {
+        get
+        {
+            if (AvgFps.HasValue && AvgFps.Value >= 1)
+            {
+                string low = LowFps1Percent.HasValue && LowFps1Percent.Value >= 1
+                    ? $" · 1% low {LowFps1Percent.Value:F0}"
+                    : string.Empty;
+                return $"ср. {AvgFps.Value:F0}{low} FPS · {DurationText}";
+            }
+            return DurationText;
+        }
+    }
 }
 
 public class DriveMetric
@@ -166,6 +200,21 @@ public class MediaTrackInfo
     public string Title { get; set; } = "Ничего не воспроизводится";
     public string Artist { get; set; } = string.Empty;
     public string SourceApp { get; set; } = string.Empty;
+    public string SourceLabel { get; set; } = string.Empty;
+    public bool IsDedicatedMusicSource { get; set; }
+    public bool HasTimeline { get; set; }
+    public double ProgressRatio { get; set; }
+    public System.Windows.Media.ImageSource? Thumbnail { get; set; }
+    public MediaColor? DominantColor { get; set; }
+}
+
+public class AudioSessionItem
+{
+    public int Pid { get; set; }
+    public string ProcessName { get; set; } = string.Empty;
+    public int VolumePercent { get; set; }
+    public bool IsMuted { get; set; }
+    public string MuteGlyph => IsMuted ? "🔇" : "🔊";
 }
 
 public class AudioDeviceItem
@@ -225,6 +274,7 @@ public class WeatherInfo
     public double TempC { get; set; }
     public string IconGlyph { get; set; } = "☀";
     public string ShortText => $"{IconGlyph} {Math.Round(TempC):+0;-0;0}°";
+    public string? RainAlertText { get; set; }
 }
 
 public class DropShelfItem
@@ -242,6 +292,7 @@ public static class ThemeHelper
         "Emerald" => (MediaColor.FromRgb(16, 185, 129), MediaColor.FromRgb(52, 211, 153)),
         "Violet" => (MediaColor.FromRgb(139, 92, 246), MediaColor.FromRgb(167, 139, 250)),
         "Amber" => (MediaColor.FromRgb(245, 158, 11), MediaColor.FromRgb(251, 191, 36)),
+        "Rose" => (MediaColor.FromRgb(244, 63, 94), MediaColor.FromRgb(251, 113, 133)),
         _ => (MediaColor.FromRgb(14, 165, 233), MediaColor.FromRgb(56, 189, 248))
     };
 }

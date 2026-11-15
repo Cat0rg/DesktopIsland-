@@ -553,10 +553,10 @@ public partial class MainWindow : Window
         CompactWeatherText.Visibility = (!side && !gameNotch && _settings.CompactShowWeather && _currentWeather != null)
             ? Visibility.Visible : Visibility.Collapsed;
 
-        GameMicPill.Visibility = (_isExpanded || (gameMode && _settings.GameShowMicMute))
-            ? Visibility.Visible : Visibility.Collapsed;
-        ReplayClipPill.Visibility = (gameMode && _settings.ShowReplayButtonInGame)
-            ? Visibility.Visible : Visibility.Collapsed;
+        SideActionStrip.Visibility = Visibility.Collapsed;
+        RamQuickPill.Visibility = Visibility.Collapsed;
+        GameMicPill.Visibility = Visibility.Collapsed;
+        ReplayClipPill.Visibility = Visibility.Collapsed;
 
         UpdateRamPillState(animate: false);
         UpdateMicPillState(animate: false);
@@ -994,8 +994,11 @@ public partial class MainWindow : Window
             nextVisible = CompactMetricsStrip;
         }
 
-        // Hide the Boost (RAM) pill ONLY while in idle eyes mode; keep it normal everywhere else
-        RamQuickPill.Visibility = nextVisible == CompactIdleEyesStrip ? Visibility.Collapsed : Visibility.Visible;
+        // Side quick pills disabled — keep single clean main island only
+        SideActionStrip.Visibility = Visibility.Collapsed;
+        RamQuickPill.Visibility = Visibility.Collapsed;
+        GameMicPill.Visibility = Visibility.Collapsed;
+        ReplayClipPill.Visibility = Visibility.Collapsed;
         if (nextVisible != CompactMetricsStrip)
             CompactLoadBarHost.Visibility = Visibility.Collapsed;
 
@@ -1033,7 +1036,9 @@ public partial class MainWindow : Window
         else
         {
             CompactMetricsStrip.Measure(new System.Windows.Size(double.PositiveInfinity, CompactHeight));
-            contentW = CompactMetricsStrip.DesiredSize.Width + 4;
+            double measured = CompactMetricsStrip.DesiredSize.Width + 12;
+            double minDesktopW = _isInFullscreenGame ? 190 : 226;
+            contentW = Math.Max(minDesktopW, measured);
         }
         return Math.Clamp(Math.Ceiling(contentW), 190, 560);
     }
@@ -1050,7 +1055,7 @@ public partial class MainWindow : Window
         SyncCompactStripVisibility();
 
         bool superMini = CompactIdleEyesStrip.Visibility == Visibility.Visible;
-        CompactMetricsStrip.Margin = new Thickness(12, 0, 12, 0);
+        CompactMetricsStrip.Margin = new Thickness(16, 0, 16, 0);
 
         string edge = EffectiveDockEdge;
         if (edge is "Left" or "Right")
@@ -1088,10 +1093,10 @@ public partial class MainWindow : Window
         }
 
         bool gameMode = _isInFullscreenGame && _settings.GameModeAutoProfile;
-        GameMicPill.Visibility = (_isExpanded || (gameMode && _settings.GameShowMicMute))
-            ? Visibility.Visible : Visibility.Collapsed;
-        ReplayClipPill.Visibility = (gameMode && _settings.ShowReplayButtonInGame)
-            ? Visibility.Visible : Visibility.Collapsed;
+        SideActionStrip.Visibility = Visibility.Collapsed;
+        RamQuickPill.Visibility = Visibility.Collapsed;
+        GameMicPill.Visibility = Visibility.Collapsed;
+        ReplayClipPill.Visibility = Visibility.Collapsed;
 
         UpdateWindowOpacity();
         UpdateRamPillState(animate: true);
@@ -2883,7 +2888,20 @@ public partial class MainWindow : Window
         bool isOvercast = wmoCode is 3 or 45 or 48;
         bool hasPrecip = wmoCode >= 51;
 
+        CompactSunRays.Visibility = isClear ? Visibility.Visible : Visibility.Collapsed;
         CompactSunShape.Visibility = (isClear || isPartlyCloudy) ? Visibility.Visible : Visibility.Collapsed;
+        if (isClear)
+        {
+            CompactSunShape.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
+            CompactSunShape.VerticalAlignment = VerticalAlignment.Center;
+            CompactSunShape.Margin = new Thickness(0);
+        }
+        else
+        {
+            CompactSunShape.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+            CompactSunShape.VerticalAlignment = VerticalAlignment.Top;
+            CompactSunShape.Margin = new Thickness(1.5, 1.5, 0, 0);
+        }
         CompactCloudShape.Visibility = !isClear ? Visibility.Visible : Visibility.Collapsed;
         CompactRainShape.Visibility = hasPrecip ? Visibility.Visible : Visibility.Collapsed;
 

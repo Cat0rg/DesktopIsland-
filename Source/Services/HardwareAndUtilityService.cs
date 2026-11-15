@@ -287,6 +287,51 @@ public static class HardwareAndUtilityService
         }
     }
 
+    private static string? _cachedGpuName;
+
+    public static string GetPrimaryGpuName()
+    {
+        if (!string.IsNullOrEmpty(_cachedGpuName))
+            return _cachedGpuName;
+
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000");
+            if (key?.GetValue("DriverDesc") is string desc && !string.IsNullOrWhiteSpace(desc))
+            {
+                string clean = desc.Replace("NVIDIA ", "", StringComparison.OrdinalIgnoreCase)
+                                   .Replace("AMD ", "", StringComparison.OrdinalIgnoreCase)
+                                   .Trim()
+                                   .ToUpperInvariant();
+                _cachedGpuName = clean;
+                return _cachedGpuName;
+            }
+        }
+        catch { }
+        _cachedGpuName = "ВИДЕОКАРТА";
+        return _cachedGpuName;
+    }
+
+    public static (bool IsRunning, bool InVoice) GetDiscordVoiceStatus()
+    {
+        try
+        {
+            var procs = Process.GetProcessesByName("Discord");
+            bool running = procs.Length > 0;
+            foreach (var p in procs) p.Dispose();
+            if (!running)
+                return (false, false);
+
+            var activeMic = CoreAudioService.GetActiveCaptureProcessName();
+            bool inVoice = !string.IsNullOrEmpty(activeMic) && activeMic.Contains("Discord", StringComparison.OrdinalIgnoreCase);
+            return (true, inVoice);
+        }
+        catch
+        {
+            return (false, false);
+        }
+    }
+
     public static List<(int Index, int BatteryPercent, bool IsWired)> GetConnectedGamepads()
     {
         var list = new List<(int, int, bool)>();

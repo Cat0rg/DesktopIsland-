@@ -3,6 +3,7 @@ App/
 Config/
 Logs/
 _InstallerBuild/
+Source_Backup_*/
 Source/bin/
 Source/obj/
 *.zip

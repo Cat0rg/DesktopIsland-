@@ -74,6 +74,9 @@ public class AppSettings
     public bool AlwaysOnTop { get; set; } = true;
     public bool StartWithWindows { get; set; } = true;
     public bool ConfirmControversialCleanup { get; set; } = true;
+
+    public bool UseHomeAppsDock { get; set; } = true;
+    public string TranslateDirection { get; set; } = "Auto"; // Auto, EnToRu, RuToEn
 }
 
 public class ClipboardEntry
@@ -204,6 +207,8 @@ public class MediaTrackInfo
     public bool IsDedicatedMusicSource { get; set; }
     public bool HasTimeline { get; set; }
     public double ProgressRatio { get; set; }
+    public double PositionSeconds { get; set; }
+    public double DurationSeconds { get; set; }
     public System.Windows.Media.ImageSource? Thumbnail { get; set; }
     public MediaColor? DominantColor { get; set; }
 }
@@ -272,8 +277,10 @@ public class WeatherInfo
 {
     public string City { get; set; } = string.Empty;
     public double TempC { get; set; }
+    public int WmoCode { get; set; }
+    public string ConditionText { get; set; } = "Ясно";
     public string IconGlyph { get; set; } = "☀";
-    public string ShortText => $"{IconGlyph} {Math.Round(TempC):+0;-0;0}°";
+    public string ShortText => $"{Math.Round(TempC):+0;-0;0}°";
     public string? RainAlertText { get; set; }
 }
 

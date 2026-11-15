@@ -82,6 +82,8 @@ public static class MediaControlService
 
                 bool hasTimeline = false;
                 double ratio = 0;
+                double posSec = 0;
+                double durSec = 0;
                 try
                 {
                     var tl = s.GetTimelineProperties();
@@ -92,13 +94,18 @@ public static class MediaControlService
                         if (total > 1)
                         {
                             hasTimeline = true;
-                            ratio = Math.Clamp(pos / total, 0.0, 1.0);
+                            durSec = total;
+                            posSec = Math.Clamp(pos, 0.0, total);
+                            ratio = Math.Clamp(posSec / total, 0.0, 1.0);
                         }
                     }
                 }
                 catch { }
 
                 bool isSpotify = src.Contains("Spotify", StringComparison.OrdinalIgnoreCase);
+                bool isYouTubeMusic = src.Contains("YouTubeMusic", StringComparison.OrdinalIgnoreCase)
+                                   || title.Contains("YouTube Music", StringComparison.OrdinalIgnoreCase)
+                                   || album.Contains("YouTube Music", StringComparison.OrdinalIgnoreCase);
                 bool isSoundCloud = src.Contains("SoundCloud", StringComparison.OrdinalIgnoreCase)
                                  || title.Contains("SoundCloud", StringComparison.OrdinalIgnoreCase)
                                  || artist.Contains("SoundCloud", StringComparison.OrdinalIgnoreCase)
@@ -111,6 +118,7 @@ public static class MediaControlService
                               || src.Contains("vivaldi", StringComparison.OrdinalIgnoreCase);
                 bool isDedicatedMusic = isSpotify
                                      || isSoundCloud
+                                     || isYouTubeMusic
                                      || src.Contains("Yandex", StringComparison.OrdinalIgnoreCase)
                                      || src.Contains("Music", StringComparison.OrdinalIgnoreCase)
                                      || src.Contains("AIMP", StringComparison.OrdinalIgnoreCase)
@@ -118,7 +126,6 @@ public static class MediaControlService
                                      || src.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase)
                                      || src.Contains("Tidal", StringComparison.OrdinalIgnoreCase)
                                      || src.Contains("Deezer", StringComparison.OrdinalIgnoreCase)
-                                     || title.Contains("YouTube Music", StringComparison.OrdinalIgnoreCase)
                                      || album.Contains("SoundCloud", StringComparison.OrdinalIgnoreCase);
 
                 int score = 0;
@@ -135,6 +142,11 @@ public static class MediaControlService
                     if (isSoundCloud) score += 350;
                     else if (isBrowser && !string.IsNullOrWhiteSpace(title)) score += 200;
                 }
+                else if (string.Equals(preferredPlayer, "YouTubeMusic", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (isYouTubeMusic) score += 350;
+                    else if (isBrowser && !string.IsNullOrWhiteSpace(title)) score += 200;
+                }
                 else if (isDedicatedMusic)
                 {
                     score += 80;
@@ -142,6 +154,7 @@ public static class MediaControlService
 
                 string label = isSpotify ? "Spotify"
                     : isSoundCloud ? "SoundCloud"
+                    : isYouTubeMusic ? "YT Music"
                     : ExtractSourceLabel(src);
 
                 ImageSource? thumbImg = null;
@@ -180,6 +193,8 @@ public static class MediaControlService
                         IsDedicatedMusicSource = isDedicatedMusic,
                         HasTimeline = hasTimeline,
                         ProgressRatio = ratio,
+                        PositionSeconds = posSec,
+                        DurationSeconds = durSec,
                         Thumbnail = thumbImg,
                         DominantColor = domColor
                     }
@@ -222,7 +237,7 @@ public static class MediaControlService
             var bmp = new BitmapImage();
             bmp.BeginInit();
             bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.DecodePixelWidth = 64;
+            bmp.DecodePixelWidth = 160;
             bmp.StreamSource = ms;
             bmp.EndInit();
             bmp.Freeze();
@@ -293,6 +308,21 @@ public static class MediaControlService
         return new MediaTrackInfo { HasSession = false };
     }
 
+    public static async Task<bool> SeekRatioAsync(double ratio, string preferredPlayer = "Auto")
+    {
+        try
+        {
+            var best = await ResolveBestSessionAsync(preferredPlayer);
+            if (best == null) return false;
+            var tl = best.Session.GetTimelineProperties();
+            if (tl == null || tl.EndTime <= tl.StartTime) return false;
+            long targetTicks = tl.StartTime.Ticks + (long)((tl.EndTime - tl.StartTime).Ticks * Math.Clamp(ratio, 0.0, 1.0));
+            return await best.Session.TryChangePlaybackPositionAsync(targetTicks);
+        }
+        catch { }
+        return false;
+    }
+
     public static async Task PlayPauseAsync(string preferredPlayer = "Auto")
     {
         try
@@ -348,6 +378,10 @@ public static class MediaControlService
             else if (string.Equals(player, "SoundCloud", StringComparison.OrdinalIgnoreCase))
             {
                 Process.Start(new ProcessStartInfo("https://soundcloud.com") { UseShellExecute = true });
+            }
+            else if (string.Equals(player, "YouTubeMusic", StringComparison.OrdinalIgnoreCase))
+            {
+                Process.Start(new ProcessStartInfo("https://music.youtube.com") { UseShellExecute = true });
             }
         }
         catch { }

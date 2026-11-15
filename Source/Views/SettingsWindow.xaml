@@ -252,18 +252,32 @@
                                     <Slider x:Name="OpacitySlider" Grid.Column="1" Minimum="0.65" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                 </Grid>
 
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="175"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Режим крепления:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="DockModeCombo" Grid.Column="1" Height="28">
+                                        <ComboBoxItem Content="Прилипший к верхнему краю (Notch · по умолч.)" Tag="TopAttached"/>
+                                        <ComboBoxItem Content="С отступом сверху (парящий как на картинке)" Tag="TopFloating"/>
+                                        <ComboBoxItem Content="Сбоку слева экрана" Tag="Left"/>
+                                        <ComboBoxItem Content="Сбоку справа экрана" Tag="Right"/>
+                                        <ComboBoxItem Content="Свободно на экране (где оставлен)" Tag="Free"/>
+                                    </ComboBox>
+                                </Grid>
+
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="175"/>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Отступ сверху (пикс.):" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Отступ сверху (при парении):" VerticalAlignment="Center"/>
                                     <TextBox x:Name="TopOffsetBox" Grid.Column="1" Width="76" Style="{StaticResource DarkTextBox}"/>
-                                    <Button Grid.Column="2" Content="Центр по X" HorizontalAlignment="Right" Style="{StaticResource SettingsBtn}" Padding="10,5" Click="ResetHorizontalOffset_Click" ToolTip="Вернуть островок точно в центр экрана"/>
+                                    <Button Grid.Column="2" Content="Центр по X" HorizontalAlignment="Right" Style="{StaticResource SettingsBtn}" Padding="10,5" Click="ResetHorizontalOffset_Click" ToolTip="Вернуть островок точно в центр верха экрана"/>
                                 </Grid>
 
-                                <CheckBox x:Name="DockToTopChk" Content="Прижать островок к верхнему краю экрана (Notch-вид)"/>
                                 <CheckBox x:Name="AlwaysOnTopChk" Content="Поверх всех окон (Topmost · Ctrl+Alt+D — вернуть/спрятать)"/>
                                 <CheckBox x:Name="ExpandOnHoverChk" Content="Раскрывать островок при наведении мыши"/>
                                 <CheckBox x:Name="EnableAnimationsChk" Content="Плавная анимация капсулы и молнии"/>

@@ -30,7 +30,7 @@ namespace DesktopIsland;
 public partial class MainWindow : Window
 {
     private const double CompactHeight = 36.0;
-    private const double ExpandedWidth = 468.0;
+    private const double ExpandedWidth = 560.0;
 
     private const int WmDeviceChange = 0x0219;
     private const int DbtDeviceArrival = 0x8000;
@@ -127,8 +127,13 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, ImageSource?> _iconCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly Queue<double> _cpuHistory = new(16);
+    private readonly Queue<double> _gpuHistory = new(16);
     private readonly Queue<double> _ramHistory = new(16);
     private readonly Queue<double> _netHistory = new(16);
+    private DateTime? _dndAutoOffEndUtc;
+    private string _lastCompactGameExePath = string.Empty;
+    private bool _isSystemDetailsExpanded;
+    private bool _isRemoteExtrasExpanded;
     private FileSystemWatcher? _downloadsWatcher;
     private string _lastDownloadToastName = string.Empty;
     private DateTime _lastDownloadToastAt = DateTime.MinValue;
@@ -172,6 +177,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _ramLabelResetTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(3.2) };
     private readonly DispatcherTimer _weatherTimer = new() { Interval = TimeSpan.FromMinutes(30) };
+    private readonly DispatcherTimer _updateTimer = new() { Interval = TimeSpan.FromMinutes(90) };
+    private string _lastNotifiedUpdateTag = string.Empty;
     private readonly DispatcherTimer _gameInputTimer = new() { Interval = TimeSpan.FromMilliseconds(60) };
     private readonly DispatcherTimer _borderAlertResetTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _magnetTimer = new() { Interval = TimeSpan.FromMilliseconds(30) };
@@ -201,6 +208,8 @@ public partial class MainWindow : Window
     private MediaPoint _shelfDragStart;
     private DropShelfItem? _shelfDragItem;
     private string _lastCalcResult = string.Empty;
+    private string _lastTranslateOriginal = string.Empty;
+    private string _lastTranslatedText = string.Empty;
 
     private HwndSource? _hwndSource;
     private uint _taskbarCreatedMsg;
@@ -243,6 +252,7 @@ public partial class MainWindow : Window
     private NativePoint _dragStartCursor;
     private double _dragStartOffset;
     private double _dragStartVerticalOffset;
+    private double _dragStartFreeTopPx;
     private double _dragStartWindowLeft;
     private bool _isMagnetActive;
     private double _pulsePhase;
@@ -273,6 +283,8 @@ public partial class MainWindow : Window
         DropShelfList.ItemsSource = _dropShelfItems;
         ClipboardHistoryList.ItemsSource = _clipboardService.Entries;
         AppMixerList.ItemsSource = _audioSessions;
+        SyncTranslateDirUi();
+        SyncHomeAppsModeUi();
 
         _clipboardService.ClipboardTextCopied += OnClipboardTextCopied;
         _screenRecorder.RecordingError += err => Dispatcher.BeginInvoke(() =>
@@ -289,6 +301,7 @@ public partial class MainWindow : Window
         _ramLabelResetTimer.Tick += RamLabelResetTimer_Tick;
         _toastTimer.Tick += ToastTimer_Tick;
         _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
+        _updateTimer.Tick += async (_, _) => await CheckForUpdatesAsync(manual: false);
         _gameInputTimer.Tick += GameInputTimer_Tick;
         _magnetTimer.Tick += MagnetTimer_Tick;
         _inputStateTimer.Tick += InputStateTimer_Tick;
@@ -338,6 +351,7 @@ public partial class MainWindow : Window
         _monitorTimer.Start();
         _eqTimer.Start();
         _weatherTimer.Start();
+        _updateTimer.Start();
         _magnetTimer.Start();
         _inputStateTimer.Start();
 
@@ -486,7 +500,7 @@ public partial class MainWindow : Window
     }
 
     private string EffectiveDockEdge =>
-        CurrentDockEdge is "Left" or "Right" ? CurrentDockEdge : "Top";
+        CurrentDockEdge is "Left" or "Right" or "Free" ? CurrentDockEdge : "Top";
 
     private bool IsSideDocked => EffectiveDockEdge is "Left" or "Right";
 
@@ -749,7 +763,7 @@ public partial class MainWindow : Window
 
     private void UpdateCenterButtonVisibility()
     {
-        CenterPosBtn.Visibility = (IsSideDocked || Math.Abs(CurrentHorizontalOffsetPx) > 8)
+        CenterPosBtn.Visibility = (EffectiveDockEdge != "Top" || Math.Abs(CurrentHorizontalOffsetPx) > 8)
             ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -889,6 +903,7 @@ public partial class MainWindow : Window
             }
             else
             {
+                bool freePos = edge == "Free";
                 RootCanvasContainer.Margin = dockTop ? new Thickness(6, 0, 6, 6) : new Thickness(6);
                 IslandHoverZone.Padding = dockTop ? new Thickness(2, 0, 2, 2) : new Thickness(2);
 
@@ -907,7 +922,19 @@ public partial class MainWindow : Window
                     MutateActiveDockProfile(p => p.HorizontalOffsetPx = clampedOffset);
 
                 Left = screenLeft + (screenWidth - ActualWidth) / 2.0 + clampedOffset;
-                Top = dockTop ? screenTop : screenTop + Math.Clamp(_settings.TopOffsetPx, 0, 120);
+                if (freePos)
+                {
+                    double activeH = ActualHeight > 20 ? ActualHeight : (_isExpanded ? 420 : CompactHeight + 16);
+                    double maxTop = Math.Max(4.0, screenHeight - activeH - 4.0);
+                    double clampedTop = Math.Clamp(CurrentVerticalOffsetPx, 4.0, maxTop);
+                    if (_isWindowDragging)
+                        MutateActiveDockProfile(p => p.VerticalOffsetPx = clampedTop);
+                    Top = screenTop + clampedTop;
+                }
+                else
+                {
+                    Top = dockTop ? screenTop : screenTop + Math.Clamp(_settings.TopOffsetPx, 0, 120);
+                }
             }
         }
         catch { }
@@ -969,6 +996,8 @@ public partial class MainWindow : Window
 
         // Hide the Boost (RAM) pill ONLY while in idle eyes mode; keep it normal everywhere else
         RamQuickPill.Visibility = nextVisible == CompactIdleEyesStrip ? Visibility.Collapsed : Visibility.Visible;
+        if (nextVisible != CompactMetricsStrip)
+            CompactLoadBarHost.Visibility = Visibility.Collapsed;
 
         bool wasCollapsed = nextVisible.Visibility != Visibility.Visible;
         nextVisible.Visibility = Visibility.Visible;
@@ -1083,16 +1112,25 @@ public partial class MainWindow : Window
             ExpandedContentGrid.Visibility = Visibility.Visible;
             if (_settings.EnableAnimations)
             {
-                ExpandedContentGrid.BeginAnimation(OpacityProperty, null);
-                ExpandedContentGrid.Opacity = 0.0;
-                ExpandedContentGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(180)));
+                AnimateTabBodyEntrance();
             }
             else
             {
                 ExpandedContentGrid.BeginAnimation(OpacityProperty, null);
                 ExpandedContentGrid.Opacity = 1.0;
+                ExpandedTabBody.BeginAnimation(OpacityProperty, null);
+                ExpandedTabBody.Opacity = 1.0;
+                TabBodyTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+                TabBodyTranslate.Y = 0;
             }
             EditAppsBtn.Visibility = TabApps.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+            if (TabApps.IsChecked == true)
+            {
+                RebuildAppTiles();
+                SyncHomeAppsModeUi();
+                _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
+            }
 
             if (TabSystem.IsChecked == true) RefreshDrives();
             if (TabScreenTime.IsChecked == true) RefreshScreenTimeUi();
@@ -1128,13 +1166,15 @@ public partial class MainWindow : Window
     private void UpdateExpandedBounds(bool animate)
     {
         if (!_isExpanded) return;
-        ExpandedContentGrid.Width = ExpandedWidth - 28;
+        double contentW = ExpandedWidth - 38.0; // Margin L(18)+R(18)=36 + Border 2px
+        ExpandedContentGrid.Width = contentW;
         ExpandedContentGrid.Height = double.NaN;
         ExpandedContentGrid.InvalidateMeasure();
-        ExpandedContentGrid.Measure(new System.Windows.Size(ExpandedWidth, double.PositiveInfinity));
+        ExpandedContentGrid.Measure(new System.Windows.Size(ExpandedWidth - 2.0, double.PositiveInfinity));
 
         double measuredH = ExpandedContentGrid.DesiredSize.Height;
-        double targetHeight = Math.Clamp(Math.Ceiling(measuredH + 2), 120, 760);
+        double borderH = IslandBorder.BorderThickness.Top + IslandBorder.BorderThickness.Bottom;
+        double targetHeight = Math.Clamp(Math.Ceiling(measuredH + borderH + 2.0), 120, 780);
         AnimateIslandSize(ExpandedWidth, targetHeight, GetExpandedCornerRadius(), animate);
     }
 
@@ -1148,8 +1188,8 @@ public partial class MainWindow : Window
         double curH = IslandBorder.ActualHeight > 0 ? IslandBorder.ActualHeight : IslandBorder.Height;
         bool growing = targetW >= curW - 1 && targetH >= curH - 1;
         IEasingFunction ease = animate && growing
-            ? new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.18 }
-            : new CubicEase { EasingMode = EasingMode.EaseOut };
+            ? new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.25 }
+            : new QuarticEase { EasingMode = EasingMode.EaseOut };
 
         IslandHoverZone.CornerRadius = new CornerRadius(
             targetCorner.TopLeft > 0 ? targetCorner.TopLeft + 2 : 0,
@@ -1174,6 +1214,27 @@ public partial class MainWindow : Window
         IslandBorder.BeginAnimation(WidthProperty, wAnim);
         IslandBorder.BeginAnimation(HeightProperty, hAnim);
         IslandBorder.CornerRadius = targetCorner;
+    }
+
+    private void AnimateTabBodyEntrance()
+    {
+        if (!_settings.EnableAnimations) return;
+        ExpandedContentGrid.BeginAnimation(OpacityProperty, null);
+        ExpandedContentGrid.Opacity = 1.0;
+
+        ExpandedTabBody.BeginAnimation(OpacityProperty, null);
+        ExpandedTabBody.Opacity = 0.0;
+        ExpandedTabBody.BeginAnimation(OpacityProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(190))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+
+        TabBodyTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+        TabBodyTranslate.Y = 9.0;
+        TabBodyTranslate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0.0, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+        });
     }
 
     private void UpdateRamPillState(bool animate)
@@ -1464,19 +1525,8 @@ public partial class MainWindow : Window
                 int added = 0;
                 foreach (var path in files.Take(8))
                 {
-                    if (!_dropShelfItems.Any(x => string.Equals(x.FullPath, path, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        _dropShelfItems.Insert(0, new DropShelfItem
-                        {
-                            Name = IOPath.GetFileName(path),
-                            FullPath = path,
-                            IsFile = true
-                        });
-                        added++;
-                    }
+                    if (AddFileToDropShelf(path)) added++;
                 }
-                while (_dropShelfItems.Count > 10) _dropShelfItems.RemoveAt(_dropShelfItems.Count - 1);
-                SyncDropShelfUi();
                 ShowToast("📎", $"На полку: +{added} ({_dropShelfItems.Count})", "Открыть", () => OpenTab("Utils"), durationMs: 3000);
             }
             else if (e.Data.GetDataPresent(System.Windows.DataFormats.UnicodeText) &&
@@ -1515,6 +1565,12 @@ public partial class MainWindow : Window
         GetCursorPos(out _dragStartCursor);
         _dragStartOffset = CurrentHorizontalOffsetPx;
         _dragStartVerticalOffset = CurrentVerticalOffsetPx;
+        var dpiStart = VisualTreeHelper.GetDpi(this);
+        double scaleYStart = dpiStart.DpiScaleY <= 0 ? 1.0 : dpiStart.DpiScaleY;
+        double startScreenTop = GetTargetScreen().Bounds.Top / scaleYStart;
+        _dragStartFreeTopPx = EffectiveDockEdge == "Free"
+            ? CurrentVerticalOffsetPx
+            : Math.Max(4.0, Top - startScreenTop);
         _dragStartWindowLeft = Left;
         _isWindowDragging = true;
         _didHorizontalDrag = false;
@@ -1554,22 +1610,25 @@ public partial class MainWindow : Window
             double cx = now.X / dpiX;
             double cy = now.Y / dpiY;
             string prevEdge = EffectiveDockEdge;
+            double activeH = ActualHeight > 20 ? ActualHeight : (_isExpanded ? 420 : CompactHeight + 16);
 
-            // Magnetic snap to Top / Left / Right edges of screen (saved per-process if active, else Desktop default)
-            if (cy <= sTop + 56 && cx > sLeft + 95 && cx < sLeft + sWidth - 95)
+            // Dock ONLY when intentionally dragged right up against a screen edge; anywhere else stays Free X/Y!
+            if (cy <= sTop + 14 && cx > sLeft + 75 && cx < sLeft + sWidth - 75)
             {
                 if (prevEdge != "Top")
                 {
-                    double clampedX = Math.Clamp(cx - (sLeft + sWidth / 2.0), -(sWidth / 2.0 - 150), sWidth / 2.0 - 150);
-                    MutateActiveDockProfile(p => { p.DockEdge = "Top"; p.HorizontalOffsetPx = clampedX; });
-                    _dragStartOffset = clampedX - dx;
+                    double targetOffset = prevEdge is "Left" or "Right"
+                        ? Math.Clamp(cx - (sLeft + sWidth / 2.0), -(sWidth / 2.0 - 150), sWidth / 2.0 - 150)
+                        : _dragStartOffset + dx;
+                    MutateActiveDockProfile(p => { p.DockEdge = "Top"; p.HorizontalOffsetPx = targetOffset; });
+                    _dragStartOffset = targetOffset - dx;
                 }
                 else
                 {
                     MutateActiveDockProfile(p => p.HorizontalOffsetPx = _dragStartOffset + dx);
                 }
             }
-            else if (cx <= sLeft + 80)
+            else if (cx <= sLeft + 18)
             {
                 if (prevEdge != "Left")
                 {
@@ -1582,7 +1641,7 @@ public partial class MainWindow : Window
                     MutateActiveDockProfile(p => p.VerticalOffsetPx = _dragStartVerticalOffset + dy);
                 }
             }
-            else if (cx >= sLeft + sWidth - 80)
+            else if (cx >= sLeft + sWidth - 18)
             {
                 if (prevEdge != "Right")
                 {
@@ -1595,21 +1654,35 @@ public partial class MainWindow : Window
                     MutateActiveDockProfile(p => p.VerticalOffsetPx = _dragStartVerticalOffset + dy);
                 }
             }
-            else if (IsSideDocked)
-            {
-                MutateActiveDockProfile(p => p.VerticalOffsetPx = _dragStartVerticalOffset + dy);
-            }
             else
             {
-                MutateActiveDockProfile(p => p.HorizontalOffsetPx = _dragStartOffset + dx);
+                if (prevEdge is "Left" or "Right")
+                {
+                    double targetXOffset = cx - (sLeft + sWidth / 2.0);
+                    double targetTopPx = Math.Clamp(cy - sTop - 18.0, 4.0, Math.Max(4.0, sHeight - activeH - 4.0));
+                    _dragStartOffset = targetXOffset - dx;
+                    _dragStartFreeTopPx = targetTopPx - dy;
+                }
+
+                double freeTop = Math.Clamp(_dragStartFreeTopPx + dy, 4.0, Math.Max(4.0, sHeight - activeH - 4.0));
+                MutateActiveDockProfile(p =>
+                {
+                    p.DockEdge = "Free";
+                    p.HorizontalOffsetPx = _dragStartOffset + dx;
+                    p.VerticalOffsetPx = freeTop;
+                });
             }
 
             if (EffectiveDockEdge != prevEdge)
             {
                 ApplyGameVisualChrome();
-                UpdateCompactWidth(animate: false);
+                if (_isExpanded)
+                    UpdateExpandedBounds(animate: false);
+                else
+                    UpdateCompactWidth(animate: false);
                 UpdateRamPillState(animate: false);
                 UpdateMicPillState(animate: false);
+                UpdateReplayPillState(animate: false);
             }
 
             PositionTopCenter();
@@ -1812,6 +1885,23 @@ public partial class MainWindow : Window
                 CompactTimerText.Text = $"🌙 {fmt}";
                 CompactTimerPill.Visibility = Visibility.Visible;
                 TimerStatusText.Text = fmt;
+            }
+        }
+
+        if (_dndAutoOffEndUtc.HasValue)
+        {
+            var dndLeft = _dndAutoOffEndUtc.Value - DateTime.UtcNow;
+            if (dndLeft <= TimeSpan.Zero)
+            {
+                _dndAutoOffEndUtc = null;
+                QuickToolsService.SetDoNotDisturbEnabled(false);
+                SyncQuickToolStates();
+                ShowToast("🔔", "Таймер «Не беспокоить» завершён", durationMs: 2600);
+            }
+            else if (_isExpanded && TabSystem.IsChecked == true)
+            {
+                string dFmt = dndLeft.TotalHours >= 1 ? dndLeft.ToString(@"h\:mm\:ss") : dndLeft.ToString(@"mm\:ss");
+                DndLabelText.Text = $"Вкл · {dFmt}";
             }
         }
 
@@ -2186,18 +2276,37 @@ public partial class MainWindow : Window
 
             if (_settings.EnableSystemMonitor)
             {
-                // FPS left of CPU:
-                // In fullscreen games: gamepad icon + real FPS colored RED (<60) or GREEN (>=60)
-                if (_isInFullscreenGame)
+                bool inGame = _isInFullscreenGame;
+
+                // Desktop compact pill stays ultra-clean (Dot · Time · Colored Weather);
+                // Fullscreen game pill switches to [Circle Game Icon] [FPS] · [CPU] · [GPU] · [Temp°] + bottom load bar
+                CompactTimeText.Visibility = inGame ? Visibility.Collapsed : Visibility.Visible;
+                CompactWeatherText.Visibility = (!inGame && !_isSuperMiniIdle && _settings.CompactShowWeather && _currentWeather != null)
+                    ? Visibility.Visible : Visibility.Collapsed;
+                CompactWeatherGroup.Visibility = (!inGame && !_isSuperMiniIdle && _settings.CompactShowWeather && _currentWeather != null)
+                    ? Visibility.Visible : Visibility.Collapsed;
+
+                if (inGame && !_isSuperMiniIdle)
+                {
+                    UpdateCompactGameIconBadge(metrics.ActivePid);
+                    CompactGameIconBadge.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    CompactGameIconBadge.Visibility = Visibility.Collapsed;
+                }
+
+                // FPS: > 60 green (#4ADE80), <= 60 red (#F87171)
+                if (inGame)
                 {
                     if (_sysMonitor.IsEtwFpsActive || metrics.ActiveFps >= 1)
                     {
                         int fpsInt = (int)Math.Round(metrics.ActiveFps);
-                        CompactFpsText.Text = $"🎮 {fpsInt} FPS";
+                        CompactFpsText.Text = $"{fpsInt} FPS";
                         SideFpsText.Text = $"{fpsInt} FPS";
-                        var fpsColor = fpsInt < 60
-                            ? new SolidColorBrush(MediaColor.FromRgb(248, 113, 113))  // Red (<60)
-                            : new SolidColorBrush(MediaColor.FromRgb(74, 222, 128));   // Green (>=60)
+                        var fpsColor = fpsInt > 60
+                            ? new SolidColorBrush(MediaColor.FromRgb(74, 222, 128))   // Green (>60)
+                            : new SolidColorBrush(MediaColor.FromRgb(248, 113, 113)); // Red (<=60)
                         CompactFpsText.Foreground = fpsColor;
                         SideFpsText.Foreground = fpsColor;
                         FpsDetailText.Foreground = fpsColor;
@@ -2208,7 +2317,7 @@ public partial class MainWindow : Window
                     }
                     else
                     {
-                        CompactFpsText.Text = "🎮 — FPS";
+                        CompactFpsText.Text = "— FPS";
                         SideFpsText.Text = "— FPS";
                         var warnCol = new SolidColorBrush(MediaColor.FromRgb(248, 113, 113));
                         CompactFpsText.Foreground = warnCol;
@@ -2222,55 +2331,49 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    CompactFpsText.Text = $"{metrics.ActiveFps:F0} FPS";
-                    SideFpsText.Text = $"{metrics.ActiveFps:F0} FPS";
-                    CompactFpsText.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrightBrush");
-                    SideFpsText.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrightBrush");
-                    FpsDetailText.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrightBrush");
-                    CompactFpsText.ToolTip = _sysMonitor.IsEtwFpsActive ? "Реальный ETW FPS активного окна" : "DWM FPS активного окна";
+                    FpsDetailText.Foreground = new SolidColorBrush(MediaColor.FromRgb(142, 144, 153));
                     FpsDetailText.Text = string.IsNullOrEmpty(metrics.ActiveWindowTitle)
                         ? $"{metrics.ActiveFps:F0} FPS"
                         : $"{metrics.ActiveFps:F0} FPS · {metrics.ActiveWindowTitle}";
                 }
-                bool showFps = _settings.CompactShowFps && _isInFullscreenGame;
-                CompactFpsText.Visibility = (showFps && !_isSuperMiniIdle) ? Visibility.Visible : Visibility.Collapsed;
-                SideFpsText.Visibility = showFps ? Visibility.Visible : Visibility.Collapsed;
+
+                CompactFpsText.Visibility = (inGame && _settings.CompactShowFps && !_isSuperMiniIdle)
+                    ? Visibility.Visible : Visibility.Collapsed;
+                SideFpsText.Visibility = (_settings.CompactShowFps && inGame) ? Visibility.Visible : Visibility.Collapsed;
 
                 bool highCpu = metrics.CpuPercent >= 75;
                 bool highRam = metrics.RamPercent >= 80;
-                bool highTemp = metrics.GpuTempC.HasValue && metrics.GpuTempC.Value >= 84;
+                bool highGpu = metrics.GpuPercent.HasValue && metrics.GpuPercent.Value >= 80;
+                bool highTemp = metrics.GpuTempC.HasValue && metrics.GpuTempC.Value >= 85;
                 var highBlue = new SolidColorBrush(MediaColor.FromRgb(56, 189, 248));
-                var hotCol = new SolidColorBrush(MediaColor.FromRgb(251, 146, 60));
+                var hotCol = new SolidColorBrush(MediaColor.FromRgb(248, 113, 113));
                 var normalCompactCol = new SolidColorBrush(MediaColor.FromRgb(203, 213, 225));
-                var normalCardCol = new SolidColorBrush(MediaColor.FromRgb(248, 250, 252));
+                var normalCardCol = new SolidColorBrush(MediaColor.FromRgb(244, 244, 245));
 
-                if (_settings.CompactShowCpuRam)
+                if (inGame && _settings.CompactShowCpuRam)
                 {
                     CpuValRun.Text = $"{metrics.CpuPercent:F0}%";
-                    CpuValRun.Foreground = highCpu ? highBlue : new SolidColorBrush(MediaColor.FromRgb(248, 250, 252));
+                    CpuValRun.Foreground = highCpu ? highBlue : normalCardCol;
 
-                    if (_isInFullscreenGame && _settings.GameShowGpuTemp && metrics.GpuPercent.HasValue)
+                    if (metrics.GpuPercent.HasValue)
                     {
                         GpuSepRun.Text = " · ";
                         GpuLabelRun.Text = "GPU ";
                         GpuValRun.Text = $"{metrics.GpuPercent.Value:F0}%";
-                        GpuValRun.Foreground = new SolidColorBrush(MediaColor.FromRgb(125, 211, 252));
+                        GpuValRun.Foreground = highGpu ? highBlue : new SolidColorBrush(MediaColor.FromRgb(125, 211, 252));
 
                         if (metrics.GpuTempC.HasValue)
                         {
                             double tc = metrics.GpuTempC.Value;
                             GpuTempRun.Text = $" {tc:F0}°";
-                            var tColor = tc >= 83
-                                ? MediaColor.FromRgb(248, 113, 113)
+                            var tColor = tc >= 85
+                                ? MediaColor.FromRgb(248, 113, 113)  // Red >= 85
                                 : tc >= 70
-                                    ? MediaColor.FromRgb(251, 191, 36)
-                                    : MediaColor.FromRgb(74, 222, 128);
+                                    ? MediaColor.FromRgb(251, 191, 36) // Amber 70-84
+                                    : MediaColor.FromRgb(74, 222, 128); // Green < 70
                             GpuTempRun.Foreground = new SolidColorBrush(tColor);
                         }
-                        else
-                        {
-                            GpuTempRun.Text = "";
-                        }
+                        else GpuTempRun.Text = "";
                     }
                     else
                     {
@@ -2280,30 +2383,51 @@ public partial class MainWindow : Window
                         GpuTempRun.Text = "";
                     }
 
-                    RamValRun.Text = $"{metrics.RamPercent:F0}%";
-                    RamValRun.Foreground = highRam ? highBlue : new SolidColorBrush(MediaColor.FromRgb(226, 232, 240));
+                    RamSepRun.Text = "";
+                    RamLabelRun.Text = "";
+                    RamValRun.Text = "";
                     CompactSysText.Visibility = _isSuperMiniIdle ? Visibility.Collapsed : Visibility.Visible;
-
-                    bool heavyLoad = highCpu || highRam;
-                    var sysCol = highTemp ? hotCol : (heavyLoad ? highBlue : normalCompactCol);
-                    SideSysText.Text = $"CPU {metrics.CpuPercent:F0}%\nRAM {metrics.RamPercent:F0}%";
-                    SideSysText.Foreground = sysCol;
-                    SideSysText.Visibility = Visibility.Visible;
                 }
                 else
                 {
                     CompactSysText.Visibility = Visibility.Collapsed;
-                    SideSysText.Visibility = Visibility.Collapsed;
                 }
 
-                // Soft breathing blue perimeter pulse on high CPU/RAM load
+                bool heavyLoad = highCpu || highRam || highGpu;
+                var sysCol = highTemp ? hotCol : (heavyLoad ? highBlue : normalCompactCol);
+                SideSysText.Text = $"CPU {metrics.CpuPercent:F0}%\nRAM {metrics.RamPercent:F0}%";
+                SideSysText.Foreground = sysCol;
+                SideSysText.Visibility = _settings.CompactShowCpuRam ? Visibility.Visible : Visibility.Collapsed;
+
+                // Animated load bar & perimeter pulse glow in game mode
+                double peakLoad = Math.Max(metrics.CpuPercent, metrics.GpuPercent ?? 0.0);
+                if (inGame && !_isExpanded && !_isSuperMiniIdle && CompactMetricsStrip.Visibility == Visibility.Visible)
+                {
+                    CompactLoadBarHost.Visibility = Visibility.Visible;
+                    double barMaxW = Math.Max(40.0, IslandBorder.Width - 36.0);
+                    CompactLoadBarFill.Width = Math.Clamp(peakLoad / 100.0, 0.05, 1.0) * barMaxW;
+                    MediaColor barCol = (highTemp || peakLoad >= 85)
+                        ? MediaColor.FromRgb(248, 113, 113)
+                        : peakLoad >= 65
+                            ? MediaColor.FromRgb(251, 191, 36)
+                            : MediaColor.FromRgb(74, 222, 128);
+                    CompactLoadBarFill.Background = new SolidColorBrush(barCol);
+                }
+                else
+                {
+                    CompactLoadBarHost.Visibility = Visibility.Collapsed;
+                }
+
+                // Breathing border glow on heavy load or overheating
                 if (!_isBorderAlertActive && !_screenRecorder.IsRecording && !(_isInFullscreenGame && _settings.GameModeAutoProfile && _isAltHeldInGame))
                 {
-                    if (highCpu || highRam)
+                    if (highTemp || peakLoad >= 75)
                     {
                         _pulsePhase += 0.9;
-                        byte a = (byte)Math.Round(110 + 95 * Math.Sin(_pulsePhase));
-                        IslandBorder.BorderBrush = new SolidColorBrush(MediaColor.FromArgb(a, 56, 189, 248));
+                        byte a = (byte)Math.Round(115 + 100 * Math.Sin(_pulsePhase));
+                        IslandBorder.BorderBrush = highTemp
+                            ? new SolidColorBrush(MediaColor.FromArgb(a, 248, 113, 113))
+                            : new SolidColorBrush(MediaColor.FromArgb(a, 56, 189, 248));
                     }
                     else
                     {
@@ -2311,26 +2435,18 @@ public partial class MainWindow : Window
                     }
                 }
 
-                if ((_settings.CompactShowPing || _isInFullscreenGame) && metrics.PingMs >= 25)
+                if (inGame && (_settings.CompactShowPing || _isInFullscreenGame) && metrics.PingMs >= 25)
                 {
                     CompactPingText.Text = $"{metrics.PingMs}ms";
                     CompactPingText.ToolTip = _sysMonitor.PingTargetLabel;
                     SidePingText.Text = $"{metrics.PingMs}ms";
                     SidePingText.ToolTip = _sysMonitor.PingTargetLabel;
-                    SolidColorBrush pingBrush;
-                    if (_isInFullscreenGame)
-                    {
-                        var pingColor = metrics.PingMs < 60
-                            ? MediaColor.FromRgb(74, 222, 128)
-                            : metrics.PingMs < 110
-                                ? MediaColor.FromRgb(250, 204, 21)
-                                : MediaColor.FromRgb(248, 113, 113);
-                        pingBrush = new SolidColorBrush(pingColor);
-                    }
-                    else
-                    {
-                        pingBrush = new SolidColorBrush(MediaColor.FromRgb(148, 163, 184));
-                    }
+                    var pingColor = metrics.PingMs < 60
+                        ? MediaColor.FromRgb(74, 222, 128)
+                        : metrics.PingMs < 110
+                            ? MediaColor.FromRgb(250, 204, 21)
+                            : MediaColor.FromRgb(248, 113, 113);
+                    var pingBrush = new SolidColorBrush(pingColor);
                     CompactPingText.Foreground = pingBrush;
                     SidePingText.Foreground = pingBrush;
                     CompactPingText.Visibility = _isSuperMiniIdle ? Visibility.Collapsed : Visibility.Visible;
@@ -2350,11 +2466,12 @@ public partial class MainWindow : Window
 
                 // Sparkline history buffers (30s rolling window)
                 PushSparklineSample(_cpuHistory, metrics.CpuPercent);
+                PushSparklineSample(_gpuHistory, metrics.GpuPercent ?? 0.0);
                 PushSparklineSample(_ramHistory, metrics.RamPercent);
                 UpdateSparklinesUi();
 
-                // Overheating alert (>= 88°C, 3-minute cooldown)
-                if (metrics.GpuTempC.HasValue && metrics.GpuTempC.Value >= 88 &&
+                // Overheating alert (>= 86°C, 3-minute cooldown)
+                if (metrics.GpuTempC.HasValue && metrics.GpuTempC.Value >= 86 &&
                     (DateTime.UtcNow - _lastThermalAlertAt).TotalMinutes >= 3)
                 {
                     _lastThermalAlertAt = DateTime.UtcNow;
@@ -2364,21 +2481,34 @@ public partial class MainWindow : Window
 
                 CpuValText.Text = $"{metrics.CpuPercent:F0}%";
                 CpuValText.Foreground = highCpu ? highBlue : normalCardCol;
+                CpuLoadBarFill.Width = Math.Clamp(metrics.CpuPercent / 100.0, 0.03, 1.0) * 124.0;
+
                 RamValText.Text = $"{metrics.RamPercent:F0}%";
                 RamValText.Foreground = highRam ? highBlue : normalCardCol;
                 RamSubText.Text = $"{metrics.RamUsedGb:F1} / {metrics.RamTotalGb:F1} ГБ";
+                RamLoadBarFill.Width = Math.Clamp(metrics.RamPercent / 100.0, 0.03, 1.0) * 124.0;
 
-                if (_settings.GameShowGpuTemp && metrics.GpuPercent.HasValue)
+                SysGpuNameText.Text = HardwareAndUtilityService.GetPrimaryGpuName();
+                if (metrics.GpuPercent.HasValue)
                 {
-                    string gTemp = metrics.GpuTempC.HasValue ? $" · {metrics.GpuTempC.Value:F0}°C" : "";
-                    GpuDetailText.Text = $"GPU {metrics.GpuPercent.Value:F0}%{gTemp}";
-                    GpuDetailText.Foreground = highTemp ? hotCol : new SolidColorBrush(MediaColor.FromRgb(148, 163, 184));
-                    GpuDetailText.Visibility = Visibility.Visible;
+                    GpuCardValText.Text = $"{metrics.GpuPercent.Value:F0}%";
+                    GpuCardValText.Foreground = highTemp ? hotCol : normalCardCol;
+                    GpuDetailText.Text = metrics.GpuTempC.HasValue ? $"Темп. {metrics.GpuTempC.Value:F0}°C" : "Активна";
+                    GpuDetailText.Foreground = highTemp ? hotCol : new SolidColorBrush(MediaColor.FromRgb(142, 144, 153));
+                    GpuLoadBarFill.Width = Math.Clamp(metrics.GpuPercent.Value / 100.0, 0.03, 1.0) * 124.0;
+                    GpuLoadBarFill.Background = new SolidColorBrush(highTemp
+                        ? MediaColor.FromRgb(248, 113, 113)
+                        : MediaColor.FromRgb(192, 132, 252));
                 }
                 else
                 {
-                    GpuDetailText.Visibility = Visibility.Collapsed;
+                    GpuCardValText.Text = "—%";
+                    GpuDetailText.Text = "Ожидание";
+                    GpuLoadBarFill.Width = 0;
                 }
+
+                if (_isExpanded && TabSystem.IsChecked == true)
+                    RefreshSystemControlCenterUi(pads);
 
                 // Soft perimeter flash alert on FPS drop or Ping spike during gameplay
                 if (_isInFullscreenGame && _settings.GameModeAutoProfile &&
@@ -2674,6 +2804,7 @@ public partial class MainWindow : Window
             SideStatusDot.ToolTip = StatusDot.ToolTip;
             PrivacyStatusText.Text = $"📷 Камера: {privacy.CameraApp}";
             PrivacyStatusText.Foreground = col;
+            SysPrivacySubText.Text = privacy.IsMicActive ? $"Также микрофон: {privacy.MicApp}" : "Камера используется прямо сейчас";
         }
         else if (privacy.IsMicActive)
         {
@@ -2685,6 +2816,7 @@ public partial class MainWindow : Window
             SideStatusDot.ToolTip = StatusDot.ToolTip;
             PrivacyStatusText.Text = $"🎙 Микрофон: {privacy.MicApp}";
             PrivacyStatusText.Foreground = col;
+            SysPrivacySubText.Text = "Микрофон прослушивается приложением";
         }
         else
         {
@@ -2693,8 +2825,9 @@ public partial class MainWindow : Window
             ExpandedStatusDot.SetResourceReference(Shape.FillProperty, "AccentBrightBrush");
             StatusDot.ToolTip = "Desktop Island активен";
             SideStatusDot.ToolTip = StatusDot.ToolTip;
-            PrivacyStatusText.Text = "🔒 Камера и мик свободны";
-            PrivacyStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(100, 116, 139));
+            PrivacyStatusText.Text = "Камера и мик свободны";
+            PrivacyStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(212, 212, 216));
+            SysPrivacySubText.Text = "Активных обращений нет";
         }
     }
 
@@ -2710,6 +2843,7 @@ public partial class MainWindow : Window
         if (!_settings.CompactShowWeather)
         {
             CompactWeatherText.Visibility = Visibility.Collapsed;
+            CompactWeatherGroup.Visibility = Visibility.Collapsed;
             return;
         }
         var w = await QuickToolsService.FetchWeatherAsync(_settings.WeatherCity);
@@ -2718,13 +2852,18 @@ public partial class MainWindow : Window
             _currentWeather = w;
             CompactWeatherText.Text = w.ShortText;
             CompactWeatherText.ToolTip = string.IsNullOrEmpty(w.RainAlertText)
-                ? $"{w.City}: {w.TempC:F1}°C"
+                ? $"{w.City}: {w.TempC:F1}°C · {w.ConditionText}"
                 : $"{w.City}: {w.TempC:F1}°C · {w.RainAlertText}";
-            CompactWeatherText.Visibility = (!_isSuperMiniIdle && !_isInFullscreenGame)
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            bool showWeather = !_isSuperMiniIdle && !_isInFullscreenGame;
+            CompactWeatherText.Visibility = showWeather ? Visibility.Visible : Visibility.Collapsed;
+            CompactWeatherGroup.Visibility = showWeather ? Visibility.Visible : Visibility.Collapsed;
             SideWeatherText.Text = w.ShortText;
             SideWeatherText.Visibility = Visibility.Visible;
+
+            HomeWeatherTempText.Text = $"{Math.Round(w.TempC)}°";
+            string cond = !string.IsNullOrWhiteSpace(w.RainAlertText) ? w.RainAlertText : w.ConditionText;
+            HomeWeatherSubText.Text = string.IsNullOrWhiteSpace(w.City) ? cond : $"{w.ConditionText} · {w.City}";
+            ApplyWeatherVectorState(w.WmoCode);
 
             if (!string.IsNullOrWhiteSpace(w.RainAlertText) &&
                 (DateTime.UtcNow - _lastRainAlertAt).TotalMinutes >= 60)
@@ -2735,6 +2874,64 @@ public partial class MainWindow : Window
 
             if (!_isExpanded) UpdateCompactWidth(animate: false);
         }
+    }
+
+    private void ApplyWeatherVectorState(int wmoCode)
+    {
+        bool isClear = wmoCode == 0;
+        bool isPartlyCloudy = wmoCode is 1 or 2;
+        bool isOvercast = wmoCode is 3 or 45 or 48;
+        bool hasPrecip = wmoCode >= 51;
+
+        CompactSunShape.Visibility = (isClear || isPartlyCloudy) ? Visibility.Visible : Visibility.Collapsed;
+        CompactCloudShape.Visibility = !isClear ? Visibility.Visible : Visibility.Collapsed;
+        CompactRainShape.Visibility = hasPrecip ? Visibility.Visible : Visibility.Collapsed;
+
+        HomeSunRayRing.Visibility = isClear ? Visibility.Visible : Visibility.Collapsed;
+        HomeSunCore.Visibility = (isClear || isPartlyCloudy) ? Visibility.Visible : Visibility.Collapsed;
+        HomeCloudShape.Visibility = (isPartlyCloudy || isOvercast || hasPrecip) ? Visibility.Visible : Visibility.Collapsed;
+        HomeRainShape.Visibility = hasPrecip ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateCompactGameIconBadge(uint pid)
+    {
+        if (pid == 0)
+        {
+            CompactGameExeIcon.Visibility = Visibility.Collapsed;
+            CompactGameFallbackGlyph.Visibility = Visibility.Visible;
+            return;
+        }
+        try
+        {
+            using var proc = Process.GetProcessById((int)pid);
+            string? exePath = proc.MainModule?.FileName;
+            if (!string.IsNullOrEmpty(exePath))
+            {
+                if (!string.Equals(exePath, _lastCompactGameExePath, StringComparison.OrdinalIgnoreCase) ||
+                    CompactGameExeIcon.Source == null)
+                {
+                    _lastCompactGameExePath = exePath;
+                    if (!_iconCache.TryGetValue(exePath, out var icon))
+                    {
+                        icon = IconHelper.GetAppIcon(exePath);
+                        _iconCache[exePath] = icon;
+                    }
+                    CompactGameExeIcon.Source = icon;
+                }
+                if (CompactGameExeIcon.Source != null)
+                {
+                    CompactGameExeIcon.Visibility = Visibility.Visible;
+                    CompactGameFallbackGlyph.Visibility = Visibility.Collapsed;
+                    return;
+                }
+            }
+        }
+        catch
+        {
+            // Protected/elevated process: keep green gamepad glyph cleanly
+        }
+        CompactGameExeIcon.Visibility = Visibility.Collapsed;
+        CompactGameFallbackGlyph.Visibility = Visibility.Visible;
     }
 
     #endregion
@@ -2755,20 +2952,38 @@ public partial class MainWindow : Window
         CompactEqPanel.Visibility = (_settings.CompactShowMedia && _isMediaPlaying && !_isSuperMiniIdle)
             ? Visibility.Visible : Visibility.Collapsed;
 
-        // Apply SMTC album/video thumbnail to spinning Music Orb and Remote Card
+        // Apply SMTC album/video thumbnail to spinning Music Orb and Hero Card
         if (track.Thumbnail != null && !_isStreamPrivacyActive)
         {
             MusicThumbBrush.ImageSource = track.Thumbnail;
             MusicThumbCircle.Visibility = Visibility.Visible;
             MusicStatusDot.Visibility = Visibility.Collapsed;
             MediaCardThumbImg.Source = track.Thumbnail;
-            MediaCardThumbBorder.Visibility = Visibility.Visible;
+            MediaCardThumbImg.Visibility = Visibility.Visible;
+            MediaCardFallbackIcon.Visibility = Visibility.Collapsed;
+            HomeMediaThumbImg.Source = track.Thumbnail;
+            HomeMediaThumbImg.Visibility = Visibility.Visible;
+            HomeMediaFallbackNote.Visibility = Visibility.Collapsed;
         }
         else
         {
             MusicThumbCircle.Visibility = Visibility.Collapsed;
             MusicStatusDot.Visibility = Visibility.Visible;
-            MediaCardThumbBorder.Visibility = Visibility.Collapsed;
+            MediaCardThumbImg.Visibility = Visibility.Collapsed;
+            MediaCardFallbackIcon.Visibility = Visibility.Visible;
+            HomeMediaThumbImg.Visibility = Visibility.Collapsed;
+            HomeMediaFallbackNote.Visibility = Visibility.Visible;
+        }
+
+        // Dynamic Hero Glow from Album Dominant Color
+        if (_isMediaPlaying && track.DominantColor.HasValue && !_isStreamPrivacyActive)
+        {
+            var dc = track.DominantColor.Value;
+            MediaHeroGlowStop.Color = MediaColor.FromArgb(62, dc.R, dc.G, dc.B);
+        }
+        else
+        {
+            MediaHeroGlowStop.Color = MediaColor.FromArgb(24, 56, 189, 248);
         }
 
         // Track change subtle banner (when playing and Privacy Shield is off)
@@ -2814,32 +3029,56 @@ public partial class MainWindow : Window
 
         MediaTitleText.Text = _isStreamPrivacyActive
             ? "🛡 Название скрыто (Стрим-щит)"
-            : (track.HasSession ? track.Title : "Ничего не воспроизводится");
+            : (track.HasSession ? track.Title : "Ничего не играет");
         MediaArtistText.Text = _isStreamPrivacyActive
             ? "Запись / трансляция экрана активна"
             : (track.HasSession
                 ? (string.IsNullOrEmpty(track.Artist) ? "Медиаплеер активен" : track.Artist)
                 : "Нажмите ▶ или выберите плеер ниже");
-        MediaPlayPauseBtn.Content = _isMediaPlaying ? "⏸" : "▶";
+        MediaPlayGlyph.Visibility = _isMediaPlaying ? Visibility.Collapsed : Visibility.Visible;
+        MediaPauseGlyph.Visibility = _isMediaPlaying ? Visibility.Visible : Visibility.Collapsed;
+        RemoteEqPanel.Visibility = _isMediaPlaying ? Visibility.Visible : Visibility.Collapsed;
+
+        HomeMediaTitleText.Text = _isStreamPrivacyActive
+            ? "Скрыто (Стрим-щит)"
+            : (track.HasSession ? track.Title : "Ничего не играет");
+        HomeMediaArtistText.Text = _isStreamPrivacyActive
+            ? "Запись активна"
+            : (track.HasSession
+                ? (string.IsNullOrEmpty(track.Artist) ? (track.SourceLabel ?? "Плеер") : track.Artist)
+                : "Включите музыку в плеере");
+        HomeMediaPlayBtn.Content = _isMediaPlaying ? "⏸" : "▶";
 
         if (track.HasSession && !string.IsNullOrEmpty(track.SourceLabel))
         {
             MediaSourceBadge.Text = track.SourceLabel;
-            MediaSourceBadge.Visibility = Visibility.Visible;
+            if (track.SourceLabel.Contains("Spotify", StringComparison.OrdinalIgnoreCase))
+                MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(30, 215, 96));
+            else if (track.SourceLabel.Contains("SoundCloud", StringComparison.OrdinalIgnoreCase))
+                MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(255, 119, 0));
+            else if (track.SourceLabel.Contains("YT", StringComparison.OrdinalIgnoreCase))
+                MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68));
+            else
+                MediaSourceDot.SetResourceReference(Shape.FillProperty, "AccentBrightBrush");
         }
         else
         {
-            MediaSourceBadge.Visibility = Visibility.Collapsed;
+            MediaSourceBadge.Text = "Плеер";
+            MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(113, 113, 122));
         }
 
         if (track.HasSession && track.HasTimeline)
         {
-            MediaProgressHost.Visibility = Visibility.Visible;
-            MediaProgressFill.Width = 225.0 * track.ProgressRatio;
+            double barW = MediaProgressHost.ActualWidth > 20 ? MediaProgressHost.ActualWidth : 355.0;
+            MediaProgressFill.Width = barW * Math.Clamp(track.ProgressRatio, 0.0, 1.0);
+            MediaElapsedText.Text = FormatMediaDuration(track.PositionSeconds);
+            MediaDurationText.Text = FormatMediaDuration(track.DurationSeconds);
         }
         else
         {
-            MediaProgressHost.Visibility = Visibility.Collapsed;
+            MediaProgressFill.Width = 0;
+            MediaElapsedText.Text = "0:00";
+            MediaDurationText.Text = "0:00";
         }
 
         if (_isExpanded && TabRemote.IsChecked == true)
@@ -2848,10 +3087,10 @@ public partial class MainWindow : Window
             SyncVolumeUi(vol);
 
             bool micMuted = CoreAudioService.IsMicMuted();
-            MicMuteBtn.Content = micMuted ? "🔇 Микрофон: Выкл" : "🎙 Микрофон: Вкл";
+            MicMuteBtn.Content = micMuted ? "🔇 Мик: Выкл" : "🎙 Мик: Вкл";
             MicMuteBtn.Foreground = micMuted
                 ? new SolidColorBrush(MediaColor.FromRgb(252, 165, 165))
-                : new SolidColorBrush(MediaColor.FromRgb(226, 232, 240));
+                : new SolidColorBrush(MediaColor.FromRgb(228, 228, 231));
 
             var outputs = CoreAudioService.GetPlaybackDevices();
             var def = outputs.FirstOrDefault(o => o.IsDefault);
@@ -2919,7 +3158,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            if (_isExpanded && TabRemote.IsChecked == true)
+            if (_isExpanded && TabSystem.IsChecked == true)
             {
                 BtStateText.Text = !state.Supported ? "· адаптер не найден" : (state.IsOn ? "· Включён" : "· Выключен");
                 BtToggleBtn.IsEnabled = state.Supported;
@@ -2927,6 +3166,10 @@ public partial class MainWindow : Window
 
                 _allBtDevices = devices;
                 ApplyBtListFilter();
+            }
+            else
+            {
+                _allBtDevices = devices;
             }
         }
     }
@@ -2955,7 +3198,7 @@ public partial class MainWindow : Window
             BtEmptyText.Visibility = Visibility.Collapsed;
         }
 
-        if (_isExpanded && TabRemote.IsChecked == true)
+        if (_isExpanded && TabSystem.IsChecked == true)
             ScheduleExpandedResize(animate: true);
     }
 
@@ -2967,15 +3210,32 @@ public partial class MainWindow : Window
 
     private void EqTimer_Tick(object? sender, EventArgs e)
     {
-        if (_isExpanded) return;
-        bool eqVisible = CompactEqPanel.Visibility == Visibility.Visible && CompactMetricsStrip.Visibility == Visibility.Visible;
-        bool fullMusicVisible = CompactMusicStrip.Visibility == Visibility.Visible;
-        if (!eqVisible && !fullMusicVisible) return;
+        bool remoteMusicVisible = _isExpanded && TabRemote.IsChecked == true && _isMediaPlaying;
+        bool eqVisible = !_isExpanded && CompactEqPanel.Visibility == Visibility.Visible && CompactMetricsStrip.Visibility == Visibility.Visible;
+        bool fullMusicVisible = !_isExpanded && CompactMusicStrip.Visibility == Visibility.Visible;
+        if (!eqVisible && !fullMusicVisible && !remoteMusicVisible) return;
 
         float rawPeak = CoreAudioService.GetRenderPeakLevel();
         double peak = rawPeak < 0.015f ? (_isMediaPlaying ? 0.35 : 0.0) : Math.Clamp(Math.Pow(rawPeak, 0.48), 0.25, 1.0);
-
         double t = Environment.TickCount64 / 85.0;
+
+        if (remoteMusicVisible)
+        {
+            double rBar(double phase, double weight)
+            {
+                double wave = 0.35 + 0.65 * (0.5 + 0.5 * Math.Sin(t + phase));
+                return Math.Clamp(3.0 + peak * weight * wave, 3.5, 16.0);
+            }
+            RemoteEqBar1.Height = rBar(0.0, 10.5);
+            RemoteEqBar2.Height = rBar(1.0, 14.0);
+            RemoteEqBar3.Height = rBar(2.0, 15.0);
+            RemoteEqBar4.Height = rBar(3.0, 12.5);
+            RemoteEqBar5.Height = rBar(4.0, 14.5);
+            RemoteEqBar6.Height = rBar(5.0, 11.0);
+            return;
+        }
+
+        if (_isExpanded) return;
         if (fullMusicVisible)
         {
             // Spin glowing ring smoothly + lively 7-bar spectrum wave
@@ -3048,7 +3308,7 @@ public partial class MainWindow : Window
     {
         _isUpdatingVolumeSlider = true;
         MasterVolumeSlider.Value = percent;
-        VolumePercentText.Text = $"🔊 Громкость: {percent}%";
+        VolumePercentText.Text = $"Громкость · {percent}%";
         _isUpdatingVolumeSlider = false;
     }
 
@@ -3057,7 +3317,36 @@ public partial class MainWindow : Window
         if (_isUpdatingVolumeSlider) return;
         int val = (int)Math.Round(e.NewValue);
         CoreAudioService.SetMasterVolumePercent(val);
-        VolumePercentText.Text = $"🔊 Громкость: {val}%";
+        VolumePercentText.Text = $"Громкость · {val}%";
+    }
+
+    private static string FormatMediaDuration(double seconds)
+    {
+        if (seconds < 0 || double.IsNaN(seconds)) return "0:00";
+        var ts = TimeSpan.FromSeconds(seconds);
+        return ts.TotalHours >= 1 ? ts.ToString(@"h\:mm\:ss") : $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}";
+    }
+
+    private async void MediaProgressHost_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        double hostW = MediaProgressHost.ActualWidth;
+        if (hostW <= 10) return;
+        double x = e.GetPosition(MediaProgressHost).X;
+        double ratio = Math.Clamp(x / hostW, 0.0, 1.0);
+        MediaProgressFill.Width = hostW * ratio;
+        await MediaControlService.SeekRatioAsync(ratio, _settings.PreferredMediaPlayer);
+        await Task.Delay(180);
+        await RefreshMediaAndDevicesAsync(false);
+    }
+
+    private void RemoteExtrasToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _isRemoteExtrasExpanded = !_isRemoteExtrasExpanded;
+        RemoteExtrasSection.Visibility = _isRemoteExtrasExpanded ? Visibility.Visible : Visibility.Collapsed;
+        RemoteExtrasToggleBtn.Content = _isRemoteExtrasExpanded
+            ? "Скрыть таймер сна, питание и записи ▴"
+            : "Таймер сна, питание и записи ▾";
+        ScheduleExpandedResize(animate: true);
     }
 
     private async void MediaPrev_Click(object sender, RoutedEventArgs e)
@@ -3085,11 +3374,21 @@ public partial class MainWindow : Window
     {
         if (sender is FrameworkElement fe && fe.Tag is string player)
         {
+            bool samePlayer = string.Equals(_settings.PreferredMediaPlayer, player, StringComparison.OrdinalIgnoreCase);
             _settings.PreferredMediaPlayer = player;
             SettingsService.Save(_settings);
             SyncPlayerBindingPills();
             _ = RefreshMediaAndDevicesAsync(false);
-            ShowToast("🎵", $"Плеер: {player}", durationMs: 2000);
+
+            if (samePlayer && !player.Equals("Auto", StringComparison.OrdinalIgnoreCase))
+            {
+                MediaControlService.LaunchOrFocusPlayer(player);
+                ShowToast("🎵", $"Открываем {(player == "YouTubeMusic" ? "YouTube Music" : player)}...", durationMs: 2200);
+            }
+            else
+            {
+                ShowToast("🎵", $"Плеер: {(player == "YouTubeMusic" ? "YT Music" : player == "Auto" ? "Авто" : player)}", durationMs: 2000);
+            }
         }
     }
 
@@ -3107,9 +3406,9 @@ public partial class MainWindow : Window
             : _settings.PreferredMediaPlayer;
 
         var activeBg = new SolidColorBrush(MediaColor.FromRgb(30, 58, 138));
-        var normalBg = new SolidColorBrush(MediaColor.FromRgb(23, 25, 38));
+        var normalBg = new SolidColorBrush(MediaColor.FromRgb(28, 29, 36));
         var activeFg = new SolidColorBrush(MediaColor.FromRgb(147, 197, 253));
-        var normalFg = new SolidColorBrush(MediaColor.FromRgb(148, 163, 184));
+        var normalFg = new SolidColorBrush(MediaColor.FromRgb(161, 161, 170));
 
         void StylePill(System.Windows.Controls.Button btn, bool active)
         {
@@ -3117,14 +3416,23 @@ public partial class MainWindow : Window
             btn.Foreground = active ? activeFg : normalFg;
         }
 
-        StylePill(PlayerAutoBtn, pref.Equals("Auto", StringComparison.OrdinalIgnoreCase));
-        StylePill(PlayerSpotifyBtn, pref.Equals("Spotify", StringComparison.OrdinalIgnoreCase));
-        StylePill(PlayerSoundCloudBtn, pref.Equals("SoundCloud", StringComparison.OrdinalIgnoreCase));
+        bool isAuto = pref.Equals("Auto", StringComparison.OrdinalIgnoreCase);
+        bool isSpotify = pref.Equals("Spotify", StringComparison.OrdinalIgnoreCase);
+        bool isSc = pref.Equals("SoundCloud", StringComparison.OrdinalIgnoreCase);
+        bool isYt = pref.Equals("YouTubeMusic", StringComparison.OrdinalIgnoreCase);
 
-        LaunchBoundPlayerBtn.Visibility = pref.Equals("Auto", StringComparison.OrdinalIgnoreCase)
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        LaunchBoundPlayerBtn.Content = $"↗ Открыть {pref}";
+        StylePill(PlayerAutoBtn, isAuto);
+        StylePill(PlayerSpotifyBtn, isSpotify);
+        StylePill(PlayerSoundCloudBtn, isSc);
+        StylePill(PlayerYtMusicBtn, isYt);
+
+        StylePill(HomePlayerAutoBtn, isAuto);
+        StylePill(HomePlayerSpotifyBtn, isSpotify);
+        StylePill(HomePlayerSoundCloudBtn, isSc);
+        StylePill(HomePlayerYtMusicBtn, isYt);
+
+        LaunchBoundPlayerBtn.Visibility = isAuto ? Visibility.Collapsed : Visibility.Visible;
+        LaunchBoundPlayerBtn.Content = $"↗ Открыть {(isYt ? "YT Music" : pref)}";
     }
 
     private void SwitchAudioOutput_Click(object sender, RoutedEventArgs e)
@@ -3149,7 +3457,7 @@ public partial class MainWindow : Window
     private void ToggleMicMute_Click(object sender, RoutedEventArgs e)
     {
         bool nowMuted = CoreAudioService.ToggleMicMute();
-        MicMuteBtn.Content = nowMuted ? "🔇 Микрофон: Выкл" : "🎙 Микрофон: Вкл";
+        MicMuteBtn.Content = nowMuted ? "🔇 Мик: Выкл" : "🎙 Мик: Вкл";
         ShowToast(nowMuted ? "🔇" : "🎙", nowMuted ? "Микрофон выключен" : "Микрофон включён");
     }
 
@@ -3188,125 +3496,459 @@ public partial class MainWindow : Window
         if (_isExpanded) ScheduleExpandedResize(animate: true);
     }
 
+    private static HashSet<string> GetRunningProcessNames()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var p in Process.GetProcesses())
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(p.ProcessName))
+                        set.Add(p.ProcessName);
+                }
+                catch { }
+                finally
+                {
+                    p.Dispose();
+                }
+            }
+        }
+        catch { }
+        return set;
+    }
+
+    private static bool IsPinnedAppRunning(PinnedApp app, HashSet<string> runningProcs)
+    {
+        try
+        {
+            string? fileName = IOPath.GetFileNameWithoutExtension(app.ExecutablePath);
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                if (runningProcs.Contains(fileName)) return true;
+                string compact = fileName.Replace(" ", string.Empty);
+                if (compact.Length >= 3 && runningProcs.Contains(compact)) return true;
+            }
+            if (!string.IsNullOrWhiteSpace(app.Name) && runningProcs.Contains(app.Name.Trim()))
+                return true;
+        }
+        catch { }
+        return false;
+    }
+
+    private UIElement CreateAppIconVisual(string path, string fallbackName, double size)
+    {
+        var iconSrc = ResolveAppIcon(path);
+        if (iconSrc != null)
+        {
+            var img = new System.Windows.Controls.Image
+            {
+                Width = size,
+                Height = size,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Source = iconSrc,
+                SnapsToDevicePixels = true
+            };
+            RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+            return img;
+        }
+
+        string initial = string.IsNullOrWhiteSpace(fallbackName) ? "A" : fallbackName.Trim()[..1].ToUpperInvariant();
+        return new Border
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(Math.Round(size * 0.28)),
+            Background = new SolidColorBrush(MediaColor.FromRgb(42, 47, 64)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = initial,
+                FontSize = Math.Round(size * 0.48),
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+    }
+
     private void RebuildAppTiles()
     {
         AppsWrapPanel.Children.Clear();
+        HomeDockAppsPanel.Children.Clear();
 
+        var runningProcs = GetRunningProcessNames();
         foreach (var app in _settings.PinnedApps)
-            AppsWrapPanel.Children.Add(CreateAppTile(app));
+        {
+            bool running = IsPinnedAppRunning(app, runningProcs);
+            AppsWrapPanel.Children.Add(CreateAppTile(app, running));
+            HomeDockAppsPanel.Children.Add(CreateDockAppTile(app, running));
+        }
 
-        if (_isAppsEditMode)
-            AppsWrapPanel.Children.Add(CreateAddAppTile());
+        AppsWrapPanel.Children.Add(CreateAddAppTile());
+        HomeDockAppsPanel.Children.Add(CreateDockAddAppButton());
     }
 
-    private Border CreateAppTile(PinnedApp app)
+    private Border CreateDockAppTile(PinnedApp app, bool isRunning)
     {
+        var scale = new ScaleTransform(1.0, 1.0);
         var tile = new Border
         {
-            Width = 96,
-            Height = 74,
+            Width = 42,
+            Height = 46,
             CornerRadius = new CornerRadius(12),
-            Background = new SolidColorBrush(MediaColor.FromRgb(22, 23, 34)),
-            BorderBrush = new SolidColorBrush(MediaColor.FromRgb(37, 40, 56)),
+            Background = MediaBrushes.Transparent,
+            BorderBrush = MediaBrushes.Transparent,
             BorderThickness = new Thickness(1),
-            Margin = new Thickness(0, 0, 7, 7),
+            Margin = new Thickness(0, 0, 6, 0),
             Cursor = System.Windows.Input.Cursors.Hand,
-            ToolTip = _isAppsEditMode ? $"Перетащите «{app.Name}» для смены места" : $"Запустить {app.Name}",
+            ToolTip = _isAppsEditMode ? $"Перетащите «{app.Name}»" : app.Name,
             Tag = app,
             AllowDrop = _isAppsEditMode
         };
 
         var root = new Grid();
-
-        var center = new StackPanel
+        var col = new StackPanel
         {
-            VerticalAlignment = VerticalAlignment.Center,
+            Orientation = System.Windows.Controls.Orientation.Vertical,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-            Margin = new Thickness(4)
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        var iconImg = new System.Windows.Controls.Image
+        var iconGlow = new Border
         {
-            Width = 28,
-            Height = 28,
-            Margin = new Thickness(0, 0, 0, 5),
-            Source = ResolveAppIcon(app.ExecutablePath)
+            Width = 36,
+            Height = 36,
+            CornerRadius = new CornerRadius(11),
+            Background = MediaBrushes.Transparent,
+            RenderTransformOrigin = new MediaPoint(0.5, 0.5),
+            RenderTransform = scale,
+            Child = CreateAppIconVisual(app.ExecutablePath, app.Name, 31)
         };
 
-        var label = new TextBlock
+        var runningDot = new System.Windows.Shapes.Ellipse
         {
-            Text = app.Name,
-            FontSize = 10.5,
-            Foreground = new SolidColorBrush(MediaColor.FromRgb(226, 232, 240)),
+            Width = 3.5,
+            Height = 3.5,
+            Fill = new SolidColorBrush(MediaColor.FromRgb(244, 244, 245)),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-            TextAlignment = TextAlignment.Center,
-            MaxWidth = 84,
-            TextTrimming = TextTrimming.CharacterEllipsis
+            Margin = new Thickness(0, 3, 0, 0),
+            Opacity = isRunning ? 0.95 : 0.0
         };
 
-        center.Children.Add(iconImg);
-        center.Children.Add(label);
-        root.Children.Add(center);
+        col.Children.Add(iconGlow);
+        col.Children.Add(runningDot);
+        root.Children.Add(col);
 
         if (_isAppsEditMode)
         {
-            var minusBadge = new System.Windows.Controls.Button
-            {
-                Width = 17,
-                Height = 17,
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 4, 4, 0),
-                Padding = new Thickness(0),
-                BorderThickness = new Thickness(0),
-                Background = MediaBrushes.Transparent,
-                Cursor = System.Windows.Input.Cursors.Hand,
-                ToolTip = $"Убрать «{app.Name}»"
-            };
-
-            var circle = new Border
-            {
-                Width = 17,
-                Height = 17,
-                CornerRadius = new CornerRadius(8.5),
-                Background = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68)),
-                Child = new System.Windows.Shapes.Path
-                {
-                    Data = Geometry.Parse("M 4.5,8.5 L 12.5,8.5"),
-                    Stroke = MediaBrushes.White,
-                    StrokeThickness = 1.8,
-                    StrokeStartLineCap = PenLineCap.Round,
-                    StrokeEndLineCap = PenLineCap.Round,
-                    Width = 17,
-                    Height = 17
-                }
-            };
-            minusBadge.Template = CreateRawContentButtonTemplate();
-            minusBadge.Content = circle;
-            minusBadge.Click += (_, ev) =>
-            {
-                ev.Handled = true;
-                _settings.PinnedApps.Remove(app);
-                SettingsService.Save(_settings);
-                RebuildAppTiles();
-                ScheduleExpandedResize(animate: true);
-            };
-            root.Children.Add(minusBadge);
+            var badge = CreateRemoveAppBadge(app);
+            badge.Margin = new Thickness(0, -2, -2, 0);
+            root.Children.Add(badge);
         }
 
         tile.Child = root;
 
         tile.MouseEnter += (_, _) =>
         {
-            tile.Background = new SolidColorBrush(MediaColor.FromRgb(30, 32, 48));
-            tile.SetResourceReference(Border.BorderBrushProperty, "AccentBrightBrush");
+            iconGlow.Background = new SolidColorBrush(MediaColor.FromArgb(24, 255, 255, 255));
+            if (_settings.EnableAnimations)
+            {
+                var anim = new DoubleAnimation(1.20, TimeSpan.FromMilliseconds(150))
+                {
+                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.36 }
+                };
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+            }
         };
         tile.MouseLeave += (_, _) =>
         {
-            tile.Background = new SolidColorBrush(MediaColor.FromRgb(22, 23, 34));
-            tile.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(37, 40, 56));
+            iconGlow.Background = MediaBrushes.Transparent;
+            if (_settings.EnableAnimations)
+            {
+                var anim = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(150))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+            }
         };
 
+        AttachAppTileBehavior(tile, app, HomeDockAppsPanel);
+        return tile;
+    }
+
+    private Border CreateDockAddAppButton()
+    {
+        var scale = new ScaleTransform(1.0, 1.0);
+        var btn = new Border
+        {
+            Width = 35,
+            Height = 35,
+            CornerRadius = new CornerRadius(17.5),
+            Background = new SolidColorBrush(MediaColor.FromRgb(42, 44, 52)),
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(4, 0, 0, 6),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            RenderTransformOrigin = new MediaPoint(0.5, 0.5),
+            RenderTransform = scale,
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = "Добавить или найти приложение (+)",
+            Child = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M 12,6.5 L 12,17.5 M 6.5,12 L 17.5,12"),
+                Stroke = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+                StrokeThickness = 1.9,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                Width = 22,
+                Height = 22,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+
+        btn.MouseEnter += (_, _) =>
+        {
+            btn.Background = new SolidColorBrush(MediaColor.FromRgb(58, 61, 74));
+            if (_settings.EnableAnimations)
+            {
+                var anim = new DoubleAnimation(1.12, TimeSpan.FromMilliseconds(140))
+                {
+                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 }
+                };
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+            }
+        };
+        btn.MouseLeave += (_, _) =>
+        {
+            btn.Background = new SolidColorBrush(MediaColor.FromRgb(42, 44, 52));
+            if (_settings.EnableAnimations)
+            {
+                var anim = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(140))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+            }
+        };
+        btn.MouseLeftButtonUp += (_, _) => ToggleInlineAppSearch();
+        return btn;
+    }
+
+    private void ToggleInlineAppSearch()
+    {
+        bool opening = HomeAppSearchDrawer.Visibility != Visibility.Visible;
+        HomeAppSearchDrawer.Visibility = opening ? Visibility.Visible : Visibility.Collapsed;
+        if (opening)
+        {
+            HomeAppSearchBox.Text = string.Empty;
+            HomeAppSearchPlaceholder.Visibility = Visibility.Visible;
+            PopulateAppSearchResults(string.Empty);
+            HomeAppSearchBox.Focus();
+        }
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void HomeAppSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        string q = HomeAppSearchBox.Text ?? string.Empty;
+        HomeAppSearchPlaceholder.Visibility = string.IsNullOrEmpty(q) ? Visibility.Visible : Visibility.Collapsed;
+        PopulateAppSearchResults(q);
+    }
+
+    private void HomeAppSearchBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            HomeAppSearchDrawer.Visibility = Visibility.Collapsed;
+            ScheduleExpandedResize(animate: true);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Enter)
+        {
+            var top = InstalledAppsService.Search(HomeAppSearchBox.Text ?? string.Empty, 1).FirstOrDefault();
+            if (top != null)
+            {
+                LaunchAppByTarget(top.LaunchTarget, top.Name);
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void BrowseCustomExeApp_Click(object sender, RoutedEventArgs e) => PromptAddPinnedApp();
+
+    private void PopulateAppSearchResults(string query)
+    {
+        HomeAppSearchResultsList.Items.Clear();
+        var results = InstalledAppsService.Search(query, 9);
+        foreach (var entry in results)
+        {
+            var row = new Border
+            {
+                Background = MediaBrushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(7, 5, 7, 5),
+                Margin = new Thickness(0, 0, 4, 4),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = $"ЛКМ: запустить {entry.Name} · 📌: закрепить в доке"
+            };
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var iconEl = CreateAppIconVisual(entry.IconPath, entry.Name, 18);
+            if (iconEl is FrameworkElement fe)
+            {
+                fe.Margin = new Thickness(0, 0, 7, 0);
+                fe.VerticalAlignment = VerticalAlignment.Center;
+            }
+            Grid.SetColumn(iconEl, 0);
+            grid.Children.Add(iconEl);
+
+            var lbl = new TextBlock
+            {
+                Text = entry.Name,
+                FontSize = 11,
+                Foreground = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(lbl, 1);
+            grid.Children.Add(lbl);
+
+            bool alreadyPinned = _settings.PinnedApps.Any(a => string.Equals(a.ExecutablePath, entry.LaunchTarget, StringComparison.OrdinalIgnoreCase));
+            var pinBtn = new System.Windows.Controls.Button
+            {
+                Content = alreadyPinned ? "✓" : "+",
+                Padding = new Thickness(5, 1, 5, 1),
+                FontSize = 10,
+                Margin = new Thickness(4, 0, 0, 0),
+                Background = alreadyPinned
+                    ? new SolidColorBrush(MediaColor.FromRgb(22, 101, 52))
+                    : new SolidColorBrush(MediaColor.FromRgb(42, 44, 54)),
+                Foreground = MediaBrushes.White,
+                BorderThickness = new Thickness(0),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Opacity = alreadyPinned ? 0.95 : 0.72,
+                ToolTip = alreadyPinned ? "Убрать из дока" : "Добавить в док островка"
+            };
+            pinBtn.Click += (_, ev) =>
+            {
+                ev.Handled = true;
+                var existing = _settings.PinnedApps.FirstOrDefault(a => string.Equals(a.ExecutablePath, entry.LaunchTarget, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    _settings.PinnedApps.Remove(existing);
+                    ShowToast("🗑", $"{entry.Name} убрано из дока", durationMs: 1800);
+                }
+                else
+                {
+                    _settings.PinnedApps.Add(new PinnedApp { Name = entry.Name, ExecutablePath = entry.LaunchTarget });
+                    ShowToast("📌", $"{entry.Name} добавлено в док", durationMs: 2000);
+                }
+                SettingsService.Save(_settings);
+                RebuildAppTiles();
+                PopulateAppSearchResults(HomeAppSearchBox.Text ?? string.Empty);
+                ScheduleExpandedResize(animate: true);
+            };
+            Grid.SetColumn(pinBtn, 2);
+            grid.Children.Add(pinBtn);
+
+            row.Child = grid;
+            row.MouseEnter += (_, _) =>
+            {
+                row.Background = new SolidColorBrush(MediaColor.FromRgb(38, 40, 50));
+                pinBtn.Opacity = 1.0;
+            };
+            row.MouseLeave += (_, _) =>
+            {
+                row.Background = MediaBrushes.Transparent;
+                pinBtn.Opacity = alreadyPinned ? 0.95 : 0.72;
+            };
+            row.MouseLeftButtonUp += (_, _) => LaunchAppByTarget(entry.LaunchTarget, entry.Name);
+
+            HomeAppSearchResultsList.Items.Add(row);
+        }
+    }
+
+    private void LaunchAppByTarget(string target, string displayName)
+    {
+        try
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(target);
+            Process.Start(new ProcessStartInfo(expanded)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = IOPath.GetDirectoryName(expanded) ?? string.Empty
+            });
+            ShowToast("🚀", $"Запуск: {displayName}", durationMs: 1800);
+        }
+        catch (Exception ex)
+        {
+            ShowToast("⚠", $"Ошибка запуска: {ex.Message}", durationMs: 2600);
+        }
+    }
+
+    private System.Windows.Controls.Button CreateRemoveAppBadge(PinnedApp app)
+    {
+        var minusBadge = new System.Windows.Controls.Button
+        {
+            Width = 17,
+            Height = 17,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 2, 2, 0),
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(0),
+            Background = MediaBrushes.Transparent,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            ToolTip = $"Убрать «{app.Name}»"
+        };
+
+        var circle = new Border
+        {
+            Width = 17,
+            Height = 17,
+            CornerRadius = new CornerRadius(8.5),
+            Background = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68)),
+            Child = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M 4.5,8.5 L 12.5,8.5"),
+                Stroke = MediaBrushes.White,
+                StrokeThickness = 1.8,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                Width = 17,
+                Height = 17
+            }
+        };
+        minusBadge.Template = CreateRawContentButtonTemplate();
+        minusBadge.Content = circle;
+        minusBadge.Click += (_, ev) =>
+        {
+            ev.Handled = true;
+            _settings.PinnedApps.Remove(app);
+            SettingsService.Save(_settings);
+            RebuildAppTiles();
+            ScheduleExpandedResize(animate: true);
+        };
+        return minusBadge;
+    }
+
+    private void AttachAppTileBehavior(Border tile, PinnedApp app, System.Windows.Controls.Panel hostPanel)
+    {
         if (_isAppsEditMode)
         {
             tile.MouseLeftButtonDown += (_, ev) =>
@@ -3316,7 +3958,7 @@ public partial class MainWindow : Window
 
                 _reorderingTile = tile;
                 _reorderingApp = app;
-                _reorderStartPoint = ev.GetPosition(AppsWrapPanel);
+                _reorderStartPoint = ev.GetPosition(hostPanel);
                 _isReorderingApp = false;
                 tile.CaptureMouse();
                 ev.Handled = true;
@@ -3330,7 +3972,7 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                var pos = ev.GetPosition(AppsWrapPanel);
+                var pos = ev.GetPosition(hostPanel);
                 if (!_isReorderingApp)
                 {
                     if (Math.Abs(pos.X - _reorderStartPoint.X) < 5 &&
@@ -3343,11 +3985,11 @@ public partial class MainWindow : Window
                     tile.BorderThickness = new Thickness(1.6);
                 }
 
-                foreach (UIElement child in AppsWrapPanel.Children)
+                foreach (UIElement child in hostPanel.Children)
                 {
                     if (child is Border targetBorder && targetBorder != tile && targetBorder.Tag is PinnedApp targetApp)
                     {
-                        var topLeft = targetBorder.TranslatePoint(new MediaPoint(0, 0), AppsWrapPanel);
+                        var topLeft = targetBorder.TranslatePoint(new MediaPoint(0, 0), hostPanel);
                         var rect = new Rect(topLeft.X, topLeft.Y, targetBorder.ActualWidth, targetBorder.ActualHeight);
                         if (rect.Contains(pos))
                         {
@@ -3359,9 +4001,9 @@ public partial class MainWindow : Window
                                 _settings.PinnedApps.Insert(toIdx, app);
 
                                 _suppressReorderLostCapture = true;
-                                AppsWrapPanel.Children.Remove(tile);
-                                AppsWrapPanel.Children.Insert(toIdx, tile);
-                                AppsWrapPanel.UpdateLayout();
+                                hostPanel.Children.Remove(tile);
+                                hostPanel.Children.Insert(toIdx, tile);
+                                hostPanel.UpdateLayout();
                                 if (!tile.IsMouseCaptured) tile.CaptureMouse();
                                 _suppressReorderLostCapture = false;
                             }
@@ -3389,7 +4031,85 @@ public partial class MainWindow : Window
         {
             tile.MouseLeftButtonUp += (_, _) => LaunchPinnedApp(app);
         }
+    }
 
+    private Border CreateAppTile(PinnedApp app, bool isRunning)
+    {
+        var tile = new Border
+        {
+            Width = 90,
+            Height = 76,
+            CornerRadius = new CornerRadius(14),
+            Background = MediaBrushes.Transparent,
+            BorderBrush = MediaBrushes.Transparent,
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(0, 0, 6, 6),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            ToolTip = _isAppsEditMode ? $"Перетащите «{app.Name}» для смены места" : $"Запустить {app.Name}",
+            Tag = app,
+            AllowDrop = _isAppsEditMode
+        };
+
+        var root = new Grid();
+
+        var center = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            Margin = new Thickness(4)
+        };
+
+        var iconVisual = CreateAppIconVisual(app.ExecutablePath, app.Name, 34);
+        if (iconVisual is FrameworkElement feIcon)
+            feIcon.Margin = new Thickness(0, 0, 0, 5);
+
+        var labelRow = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        if (isRunning)
+        {
+            labelRow.Children.Add(new System.Windows.Shapes.Ellipse
+            {
+                Width = 4,
+                Height = 4,
+                Fill = new SolidColorBrush(MediaColor.FromRgb(244, 244, 245)),
+                Margin = new Thickness(0, 1, 4, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
+
+        var label = new TextBlock
+        {
+            Text = app.Name,
+            FontSize = 10.5,
+            Foreground = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            MaxWidth = isRunning ? 74 : 82,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        labelRow.Children.Add(label);
+
+        center.Children.Add(iconVisual);
+        center.Children.Add(labelRow);
+        root.Children.Add(center);
+
+        if (_isAppsEditMode)
+        {
+            var badge = CreateRemoveAppBadge(app);
+            badge.Margin = new Thickness(0, 4, 4, 0);
+            root.Children.Add(badge);
+        }
+
+        tile.Child = root;
+
+        tile.MouseEnter += (_, _) => tile.Background = new SolidColorBrush(MediaColor.FromRgb(36, 38, 48));
+        tile.MouseLeave += (_, _) => tile.Background = MediaBrushes.Transparent;
+
+        AttachAppTileBehavior(tile, app, AppsWrapPanel);
         return tile;
     }
 
@@ -3406,7 +4126,7 @@ public partial class MainWindow : Window
             if (tile.IsMouseCaptured)
                 tile.ReleaseMouseCapture();
             tile.Opacity = 1.0;
-            tile.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(37, 40, 56));
+            tile.BorderBrush = MediaBrushes.Transparent;
             tile.BorderThickness = new Thickness(1);
         }
 
@@ -3418,15 +4138,14 @@ public partial class MainWindow : Window
     {
         var tile = new Border
         {
-            Width = 96,
-            Height = 74,
-            CornerRadius = new CornerRadius(12),
-            Background = new SolidColorBrush(MediaColor.FromRgb(18, 20, 30)),
-            BorderBrush = new SolidColorBrush(MediaColor.FromRgb(51, 65, 85)),
-            BorderThickness = new Thickness(1.2),
-            Margin = new Thickness(0, 0, 7, 7),
+            Width = 90,
+            Height = 76,
+            CornerRadius = new CornerRadius(14),
+            Background = MediaBrushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(0, 0, 6, 6),
             Cursor = System.Windows.Input.Cursors.Hand,
-            ToolTip = "Добавить программу или ярлык"
+            ToolTip = "Добавить или найти приложение (+)"
         };
 
         var stack = new StackPanel
@@ -3436,56 +4155,60 @@ public partial class MainWindow : Window
         };
         var plusCircle = new Border
         {
-            Width = 28,
-            Height = 28,
-            CornerRadius = new CornerRadius(14),
+            Width = 34,
+            Height = 34,
+            CornerRadius = new CornerRadius(17),
+            Background = new SolidColorBrush(MediaColor.FromRgb(42, 44, 52)),
             Margin = new Thickness(0, 0, 0, 5),
             Child = new System.Windows.Shapes.Path
             {
-                Data = Geometry.Parse("M 14,8 L 14,20 M 8,14 L 20,14"),
-                StrokeThickness = 2.1,
+                Data = Geometry.Parse("M 12,6.5 L 12,17.5 M 6.5,12 L 17.5,12"),
+                Stroke = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+                StrokeThickness = 1.9,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
-                Width = 28,
-                Height = 28,
-                Stroke = Resources["AccentBrightBrush"] as System.Windows.Media.Brush ?? MediaBrushes.DeepSkyBlue
+                Width = 22,
+                Height = 22,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
             }
         };
-        plusCircle.SetResourceReference(Border.BackgroundProperty, "AccentSoftBrush");
 
         stack.Children.Add(plusCircle);
         stack.Children.Add(new TextBlock
         {
             Text = "Добавить",
             FontSize = 10.5,
-            Foreground = new SolidColorBrush(MediaColor.FromRgb(148, 163, 184)),
+            Foreground = new SolidColorBrush(MediaColor.FromRgb(161, 161, 170)),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center
         });
         tile.Child = stack;
 
-        tile.MouseEnter += (_, _) => tile.Background = new SolidColorBrush(MediaColor.FromRgb(28, 30, 44));
-        tile.MouseLeave += (_, _) => tile.Background = new SolidColorBrush(MediaColor.FromRgb(18, 20, 30));
-        tile.MouseLeftButtonUp += (_, _) =>
-        {
-            var dlg = new Win32.OpenFileDialog
-            {
-                Filter = "Программы и ярлыки (*.exe;*.lnk)|*.exe;*.lnk|Все файлы (*.*)|*.*",
-                Title = "Выберите приложение для Desktop Island"
-            };
-            if (dlg.ShowDialog() == true)
-            {
-                _settings.PinnedApps.Add(new PinnedApp
-                {
-                    Name = IOPath.GetFileNameWithoutExtension(dlg.FileName),
-                    ExecutablePath = dlg.FileName
-                });
-                SettingsService.Save(_settings);
-                RebuildAppTiles();
-                ScheduleExpandedResize(animate: true);
-            }
-        };
+        tile.MouseEnter += (_, _) => tile.Background = new SolidColorBrush(MediaColor.FromRgb(36, 38, 48));
+        tile.MouseLeave += (_, _) => tile.Background = MediaBrushes.Transparent;
+        tile.MouseLeftButtonUp += (_, _) => ToggleInlineAppSearch();
 
         return tile;
+    }
+
+    private void PromptAddPinnedApp()
+    {
+        var dlg = new Win32.OpenFileDialog
+        {
+            Filter = "Программы и ярлыки (*.exe;*.lnk)|*.exe;*.lnk|Все файлы (*.*)|*.*",
+            Title = "Выберите приложение для Desktop Island"
+        };
+        if (dlg.ShowDialog() == true)
+        {
+            _settings.PinnedApps.Add(new PinnedApp
+            {
+                Name = IOPath.GetFileNameWithoutExtension(dlg.FileName),
+                ExecutablePath = dlg.FileName
+            });
+            SettingsService.Save(_settings);
+            RebuildAppTiles();
+            ScheduleExpandedResize(animate: true);
+        }
     }
 
     private static ControlTemplate CreateRawContentButtonTemplate()
@@ -3669,12 +4392,43 @@ public partial class MainWindow : Window
 
     private void UpdateSparklinesUi()
     {
-        ApplySparklinePoints(CpuSparkline, _cpuHistory);
-        ApplySparklinePoints(RamSparkline, _ramHistory);
-        ApplySparklinePoints(NetSparkline, _netHistory);
+        ApplySparklineAndArea(CpuSparkline, CpuSparkPolygon, _cpuHistory, 128.0, 38.0);
+        ApplySparklineAndArea(GpuSparkline, GpuSparkPolygon, _gpuHistory, 128.0, 38.0);
+        ApplySparklineAndArea(RamSparkline, RamSparkPolygon, _ramHistory, 128.0, 38.0);
+        ApplySparklinePoints(NetSparkline, _netHistory, 110.0, 22.0);
     }
 
-    private static void ApplySparklinePoints(Polyline line, Queue<double> samples)
+    private static void ApplySparklineAndArea(Polyline line, Polygon area, Queue<double> samples, double width, double height)
+    {
+        var pts = new PointCollection();
+        var areaPts = new PointCollection();
+        int n = samples.Count;
+        if (n == 0)
+        {
+            line.Points = pts;
+            area.Points = areaPts;
+            return;
+        }
+        int i = 0;
+        double pad = 2.0;
+        double usableH = Math.Max(4.0, height - pad * 2.0);
+        foreach (double val in samples)
+        {
+            double x = n == 1 ? width : i * (width / (n - 1));
+            double y = (height - pad) - (Math.Clamp(val, 0.0, 100.0) / 100.0) * usableH;
+            pts.Add(new MediaPoint(x, y));
+            i++;
+        }
+        line.Points = pts;
+
+        areaPts.Add(new MediaPoint(0, height));
+        foreach (var p in pts)
+            areaPts.Add(p);
+        areaPts.Add(new MediaPoint(n == 1 ? width : pts[^1].X, height));
+        area.Points = areaPts;
+    }
+
+    private static void ApplySparklinePoints(Polyline line, Queue<double> samples, double width = 62.0, double height = 18.0)
     {
         var pts = new PointCollection();
         int n = samples.Count;
@@ -3686,8 +4440,8 @@ public partial class MainWindow : Window
         int i = 0;
         foreach (double val in samples)
         {
-            double x = n == 1 ? 62.0 : i * (62.0 / (n - 1));
-            double y = 18.0 - (Math.Clamp(val, 0.0, 100.0) / 100.0) * 16.0;
+            double x = n == 1 ? width : i * (width / (n - 1));
+            double y = height - (Math.Clamp(val, 0.0, 100.0) / 100.0) * Math.Max(4.0, height - 2.0);
             pts.Add(new MediaPoint(x, y));
             i++;
         }
@@ -3833,6 +4587,7 @@ public partial class MainWindow : Window
     {
         _isAppMixerExpanded = !_isAppMixerExpanded;
         AppMixerList.Visibility = _isAppMixerExpanded ? Visibility.Visible : Visibility.Collapsed;
+        ToggleAppMixerBtn.Content = _isAppMixerExpanded ? "Микшер ▴" : "Микшер ▾";
         if (_isAppMixerExpanded)
         {
             _isUpdatingAppMixer = true;
@@ -3888,10 +4643,10 @@ public partial class MainWindow : Window
 
     private void SyncStreamShieldUi()
     {
-        StreamShieldBtn.Content = _isStreamPrivacyActive ? "🛡 Стрим-щит: Вкл" : "🛡 Стрим-щит: Выкл";
+        StreamShieldBtn.Content = _isStreamPrivacyActive ? "🛡 Щит: Вкл" : "🛡 Щит: Выкл";
         StreamShieldBtn.Background = _isStreamPrivacyActive
             ? new SolidColorBrush(MediaColor.FromRgb(127, 29, 29))
-            : new SolidColorBrush(MediaColor.FromRgb(23, 25, 38));
+            : new SolidColorBrush(MediaColor.FromRgb(31, 32, 40));
     }
 
     private void BrightnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -3944,6 +4699,10 @@ public partial class MainWindow : Window
 
             ScreenRecordBtn.Content = $"⏹ Стоп ({rFmt})";
             ScreenRecordBtn.Background = new SolidColorBrush(MediaColor.FromRgb(153, 27, 27));
+            HomeRecordCircle.Background = new SolidColorBrush(MediaColor.FromRgb(127, 29, 29));
+            HomeRecordCircle.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68));
+            HomeRecordCameraPath.Stroke = MediaBrushes.White;
+            HomeRecordLabel.Text = rFmt;
         }
         else
         {
@@ -3954,7 +4713,11 @@ public partial class MainWindow : Window
             ExpandedStatusDot.Opacity = 1.0;
 
             ScreenRecordBtn.Content = "🔴 Запись экрана";
-            ScreenRecordBtn.Background = new SolidColorBrush(MediaColor.FromRgb(35, 36, 51));
+            ScreenRecordBtn.Background = new SolidColorBrush(MediaColor.FromRgb(31, 32, 40));
+            HomeRecordCircle.Background = new SolidColorBrush(MediaColor.FromRgb(44, 22, 21));
+            HomeRecordCircle.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(74, 33, 31));
+            HomeRecordCameraPath.Stroke = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68));
+            HomeRecordLabel.Text = "Запись экрана";
         }
 
         var screens = Forms.Screen.AllScreens;
@@ -4073,9 +4836,31 @@ public partial class MainWindow : Window
 
     private void ToggleDnd_Click(object sender, RoutedEventArgs e)
     {
+        _dndAutoOffEndUtc = null;
         bool enabled = QuickToolsService.ToggleDoNotDisturb();
         SyncQuickToolStates();
         ShowToast(enabled ? "🔕" : "🔔", enabled ? "Не беспокоить: Вкл" : "Не беспокоить: Выкл", durationMs: 2200);
+    }
+
+    private void SetDndMinutes_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && int.TryParse(fe.Tag?.ToString(), out int mins))
+        {
+            if (mins <= 0)
+            {
+                _dndAutoOffEndUtc = null;
+                QuickToolsService.SetDoNotDisturbEnabled(false);
+                SyncQuickToolStates();
+                ShowToast("🔔", "Не беспокоить: Выключен", durationMs: 2000);
+            }
+            else
+            {
+                _dndAutoOffEndUtc = DateTime.UtcNow.AddMinutes(mins);
+                QuickToolsService.SetDoNotDisturbEnabled(true);
+                SyncQuickToolStates();
+                ShowToast("🔕", $"Не беспокоить на {mins} мин", durationMs: 2200);
+            }
+        }
     }
 
     private void TogglePowerMode_Click(object sender, RoutedEventArgs e)
@@ -4089,30 +4874,51 @@ public partial class MainWindow : Window
     {
         bool dnd = QuickToolsService.IsDoNotDisturbEnabled();
         DndIconText.Text = dnd ? "🔕" : "🔔";
-        DndLabelText.Text = dnd ? "Без уведомлений" : "Не беспокоить";
+        if (_dndAutoOffEndUtc.HasValue)
+        {
+            var left = _dndAutoOffEndUtc.Value - DateTime.UtcNow;
+            DndLabelText.Text = left > TimeSpan.Zero ? $"Вкл · {(int)Math.Ceiling(left.TotalMinutes)}м" : "Вкл";
+        }
+        else
+        {
+            DndLabelText.Text = dnd ? "Вкл" : "Выкл";
+        }
         DndToggleBtn.Background = dnd
             ? new SolidColorBrush(MediaColor.FromRgb(49, 46, 129))
-            : new SolidColorBrush(MediaColor.FromRgb(23, 25, 38));
+            : new SolidColorBrush(MediaColor.FromRgb(31, 32, 40));
 
         bool highPerf = QuickToolsService.IsHighPerformancePlanActive();
-        PowerModeLabelText.Text = highPerf ? "Питание: Макс" : "Питание: Баланс";
+        PowerModeLabelText.Text = highPerf ? "⚡ Питание: Макс" : "⚡ Питание: Баланс";
         PowerModeBtn.Background = highPerf
             ? new SolidColorBrush(MediaColor.FromRgb(20, 83, 45))
-            : new SolidColorBrush(MediaColor.FromRgb(23, 25, 38));
+            : new SolidColorBrush(MediaColor.FromRgb(31, 32, 40));
     }
 
     private async Task CheckUpdatesOnStartupAsync()
     {
         await Task.Delay(3500);
+        await CheckForUpdatesAsync(manual: false);
+    }
+
+    public async Task CheckForUpdatesAsync(bool manual)
+    {
         var (hasUpdate, latestTag, releaseUrl) = await QuickToolsService.CheckForGithubUpdateAsync();
         if (hasUpdate && !string.IsNullOrEmpty(latestTag))
         {
-            ShowToast(
-                "⬆",
-                $"Доступно обновление {latestTag}",
-                actionLabel: "Открыть",
-                onAction: () => OpenShellTarget(releaseUrl),
-                durationMs: 7000);
+            if (manual || !string.Equals(latestTag, _lastNotifiedUpdateTag, StringComparison.OrdinalIgnoreCase))
+            {
+                _lastNotifiedUpdateTag = latestTag;
+                ShowToast(
+                    "⬆",
+                    $"Доступно обновление {latestTag}",
+                    actionLabel: "Открыть",
+                    onAction: () => OpenShellTarget(releaseUrl),
+                    durationMs: 7500);
+            }
+        }
+        else if (manual)
+        {
+            ShowToast("✓", "Установлена актуальная версия", durationMs: 2600);
         }
     }
 
@@ -4390,12 +5196,24 @@ public partial class MainWindow : Window
 
         EditAppsBtn.Visibility = TabApps.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
-        if (TabRemote.IsChecked == true) _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
+        if (TabApps.IsChecked == true)
+        {
+            SyncHomeAppsModeUi();
+            _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
+        }
+        if (TabRemote.IsChecked == true) _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
         if (TabUtils.IsChecked == true) SyncDropShelfUi();
-        if (TabSystem.IsChecked == true) RefreshDrives();
+        if (TabSystem.IsChecked == true)
+        {
+            RefreshDrives();
+            SyncQuickToolStates();
+            RefreshSystemControlCenterUi(HardwareAndUtilityService.GetConnectedGamepads());
+            _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
+        }
         if (TabScreenTime.IsChecked == true) RefreshScreenTimeUi();
         if (TabCleaner.IsChecked == true) _ = RefreshCleanupScanAsync();
 
+        AnimateTabBodyEntrance();
         ScheduleExpandedResize(animate: true);
     }
 
@@ -4557,6 +5375,494 @@ public partial class MainWindow : Window
         win.ShowDialog();
     }
 
+    #region Home Tab Actions (Atoll 1.4 Style: Region/Screen Shot, Screen Translator RU⇄EN, Color Picker, Quick Command, Dock/Grid Switch)
+
+    private bool AddFileToDropShelf(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (_dropShelfItems.Any(x => string.Equals(x.FullPath, path, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        _dropShelfItems.Insert(0, new DropShelfItem
+        {
+            Name = IOPath.GetFileName(path),
+            FullPath = path,
+            IsFile = true
+        });
+        while (_dropShelfItems.Count > 10)
+            _dropShelfItems.RemoveAt(_dropShelfItems.Count - 1);
+        SyncDropShelfUi();
+        return true;
+    }
+
+    private void SyncHomeAppsModeUi()
+    {
+        bool dock = _settings.UseHomeAppsDock;
+        HomeDockContainer.Visibility = Visibility.Visible;
+        HomeDockScrollViewer.Visibility = dock ? Visibility.Visible : Visibility.Collapsed;
+        HomeGridContainer.Visibility = dock ? Visibility.Collapsed : Visibility.Visible;
+
+        HomeAppsModeIcon.Data = Geometry.Parse(dock
+            ? "M 4,4 H 10 V 10 H 4 Z M 14,4 H 20 V 10 H 14 Z M 4,14 H 10 V 20 H 4 Z M 14,14 H 20 V 20 H 14 Z"
+            : "M 3,8 H 21 V 16 H 3 Z M 7,12 H 9 M 11,12 H 13 M 15,12 H 17");
+        HomeAppsModeToggleBtn.ToolTip = dock ? "Переключить на сетку" : "Переключить на док";
+        HomeAppsModeToggleBtn.VerticalAlignment = dock ? VerticalAlignment.Center : VerticalAlignment.Top;
+        HomeAppsModeToggleBtn.Margin = dock ? new Thickness(6, 0, 0, 4) : new Thickness(0, 2, 0, 0);
+    }
+
+    private void HomeAppsModeToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.UseHomeAppsDock = !_settings.UseHomeAppsDock;
+        SettingsService.Save(_settings);
+        SyncHomeAppsModeUi();
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void SyncTranslateDirUi()
+    {
+        string label = _settings.TranslateDirection switch
+        {
+            "EnToRu" => "EN → RU",
+            "RuToEn" => "RU → EN",
+            _ => "RU ⇄ EN"
+        };
+        HomeTranslateCircleBtn.ToolTip = $"Выделить область экрана → перевод ({label})";
+        HomeTranslateSwapBtn.Content = _settings.TranslateDirection switch
+        {
+            "EnToRu" => "EN → RU",
+            "RuToEn" => "RU → EN",
+            _ => "Авто (RU ⇄ EN)"
+        };
+    }
+
+    private async Task<T?> RunWithHiddenIslandAsync<T>(Func<T?> action)
+    {
+        bool wasPinned = _isPinned;
+        _isPinned = true;
+        Hide();
+        await Task.Delay(140);
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            Show();
+            SetAlwaysOnTop(_settings.AlwaysOnTop);
+            _isPinned = wasPinned;
+            SetExpanded(true);
+            OpenTab("Apps");
+        }
+    }
+
+    private async void CaptureRegion_Click(object sender, RoutedEventArgs e)
+    {
+        var cropped = await RunWithHiddenIslandAsync<System.Drawing.Bitmap?>(() =>
+        {
+            var overlay = new Views.ScreenSelectionOverlay("Выделите область для снимка · Esc / ПКМ — отмена");
+            return overlay.ShowDialog() == true ? overlay.CroppedResult : null;
+        });
+
+        if (cropped == null) return;
+        using (cropped)
+        {
+            var (path, _) = ScreenCaptureOcrService.SaveAndCopyBitmap(cropped, "Region");
+            AddFileToDropShelf(path);
+            FlashIslandBorder(MediaColor.FromRgb(56, 189, 248));
+            ShowToast("📷", $"Область скопирована и сохранена: {IOPath.GetFileName(path)}", "Открыть", () => OpenShellTarget(path), durationMs: 3600);
+        }
+    }
+
+    private async void CaptureFullScreen_Click(object sender, RoutedEventArgs e)
+    {
+        var activeScreen = GetTargetScreen();
+        string? savedPath = await RunWithHiddenIslandAsync<string?>(() =>
+        {
+            var (path, _) = ScreenCaptureOcrService.CaptureScreenAndCopy(activeScreen);
+            return path;
+        });
+
+        if (!string.IsNullOrEmpty(savedPath))
+        {
+            AddFileToDropShelf(savedPath);
+            FlashIslandBorder(MediaColor.FromRgb(167, 139, 250));
+            ShowToast("🖥", $"Скриншот в буфере и на полке: {IOPath.GetFileName(savedPath)}", "Открыть", () => OpenShellTarget(savedPath), durationMs: 3600);
+        }
+    }
+
+    private async void ScreenTranslate_Click(object sender, RoutedEventArgs e)
+    {
+        var cropped = await RunWithHiddenIslandAsync<System.Drawing.Bitmap?>(() =>
+        {
+            var overlay = new Views.ScreenSelectionOverlay("Выделите текст (RU / EN) для распознавания и перевода · Esc — отмена");
+            return overlay.ShowDialog() == true ? overlay.CroppedResult : null;
+        });
+
+        if (cropped == null) return;
+
+        bool wasPinned = _isPinned;
+        _isPinned = true;
+        PinBtn.IsChecked = true;
+
+        HomeTranslateOriginalText.Text = "Распознавание текста с экрана (RU/EN)...";
+        HomeTranslateOutputBox.Text = "⏳ Перевод...";
+        HomeTranslateCard.Visibility = Visibility.Visible;
+        ScheduleExpandedResize(animate: true);
+
+        try
+        {
+            string recognized;
+            using (cropped)
+            {
+                recognized = await Task.Run(() => ScreenCaptureOcrService.RecognizeTextRuEnAsync(cropped));
+            }
+
+            if (string.IsNullOrWhiteSpace(recognized))
+            {
+                HomeTranslateOriginalText.Text = "Текст не обнаружен";
+                HomeTranslateOutputBox.Text = "Попробуйте выделить область чуть крупнее и контрастнее.";
+                ShowToast("⚠", "Текст на участке не распознан", durationMs: 2600);
+                ScheduleExpandedResize(animate: true);
+                return;
+            }
+
+            _lastTranslateOriginal = recognized;
+            await TranslateAndDisplayAsync(recognized);
+        }
+        catch (Exception ex)
+        {
+            HomeTranslateOutputBox.Text = $"Ошибка: {ex.Message}";
+            ScheduleExpandedResize(animate: true);
+        }
+        finally
+        {
+            if (!wasPinned && !_isPinned)
+                PinBtn.IsChecked = false;
+        }
+    }
+
+    private async Task TranslateAndDisplayAsync(string text)
+    {
+        HomeTranslateOriginalText.Text = text;
+        HomeTranslateOutputBox.Text = "⏳ Перевод...";
+        HomeTranslateCard.Visibility = Visibility.Visible;
+        ScheduleExpandedResize(animate: true);
+
+        var res = await ScreenCaptureOcrService.TranslateAutoRuEnAsync(text, _settings.TranslateDirection);
+        if (res.Success)
+        {
+            _lastTranslatedText = res.TranslatedText;
+            HomeTranslateOutputBox.Text = res.TranslatedText;
+            try { System.Windows.Clipboard.SetText(res.TranslatedText); } catch { }
+            FlashIslandBorder(MediaColor.FromRgb(251, 191, 36));
+            ShowToast("🌐", $"Переведено ({res.SourceLang.ToUpper()} → {res.TargetLang.ToUpper()}) и скопировано", durationMs: 2800);
+        }
+        else
+        {
+            _lastTranslatedText = text;
+            HomeTranslateOutputBox.Text = $"Не удалось перевести ({res.Error}). Распознанный текст скопирован:";
+            try { System.Windows.Clipboard.SetText(text); } catch { }
+            ShowToast("⚠", res.Error ?? "Ошибка перевода", durationMs: 3000);
+        }
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private async void SwapTranslateDirection_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.TranslateDirection = _settings.TranslateDirection switch
+        {
+            "Auto" => "EnToRu",
+            "EnToRu" => "RuToEn",
+            _ => "Auto"
+        };
+        SettingsService.Save(_settings);
+        SyncTranslateDirUi();
+
+        if (!string.IsNullOrWhiteSpace(_lastTranslateOriginal) && HomeTranslateCard.Visibility == Visibility.Visible)
+            await TranslateAndDisplayAsync(_lastTranslateOriginal);
+    }
+
+    private void CopyTranslateResult_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_lastTranslatedText))
+        {
+            try { System.Windows.Clipboard.SetText(_lastTranslatedText); } catch { }
+            ShowToast("📋", "Перевод скопирован в буфер", durationMs: 1800);
+        }
+    }
+
+    private void CopyTranslateOriginal_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_lastTranslateOriginal))
+        {
+            try { System.Windows.Clipboard.SetText(_lastTranslateOriginal); } catch { }
+            ShowToast("📋", "Оригинал скопирован в буфер", durationMs: 1800);
+        }
+    }
+
+    private void CloseTranslateCard_Click(object sender, RoutedEventArgs e)
+    {
+        HomeTranslateCard.Visibility = Visibility.Collapsed;
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private async void ColorPicker_Click(object sender, RoutedEventArgs e)
+    {
+        var result = await RunWithHiddenIslandAsync<(bool Picked, MediaColor Color, string Hex)>(() =>
+        {
+            var picker = new Views.ScreenColorPickerOverlay();
+            return picker.ShowDialog() == true ? (true, picker.PickedColor, picker.PickedHex) : (false, MediaColor.FromRgb(0, 0, 0), string.Empty);
+        });
+
+        if (result.Picked && !string.IsNullOrEmpty(result.Hex))
+        {
+            try { System.Windows.Clipboard.SetText(result.Hex); } catch { }
+            FlashIslandBorder(result.Color);
+            ShowToast("💉", $"Цвет скопирован: {result.Hex} (RGB {result.Color.R}, {result.Color.G}, {result.Color.B})", durationMs: 3400);
+        }
+    }
+
+    private void ToggleQuickCommand_Click(object sender, RoutedEventArgs e)
+    {
+        bool open = HomeCommandCard.Visibility != Visibility.Visible;
+        HomeCommandCard.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        ScheduleExpandedResize(animate: true);
+        if (open)
+            Dispatcher.BeginInvoke(DispatcherPriority.Input, () => HomeCommandBox.Focus());
+    }
+
+    private void CloseQuickCommand_Click(object sender, RoutedEventArgs e)
+    {
+        HomeCommandCard.Visibility = Visibility.Collapsed;
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void HomeCommandBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        string raw = HomeCommandBox.Text ?? string.Empty;
+        HomeCommandPlaceholder.Visibility = string.IsNullOrEmpty(raw) ? Visibility.Visible : Visibility.Collapsed;
+        if (HardwareAndUtilityService.TryEvaluateExpression(raw, _settings.PreferredCurrency, out var calc))
+        {
+            HomeCommandCalcPreview.Text = $"= {calc}";
+            HomeCommandCalcPreview.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            HomeCommandCalcPreview.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void HomeCommandBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            RunQuickCommand_Click(sender, e);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            CloseQuickCommand_Click(sender, e);
+            e.Handled = true;
+        }
+    }
+
+    private void RunQuickCommand_Click(object sender, RoutedEventArgs e)
+    {
+        string raw = (HomeCommandBox.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+
+        if (HardwareAndUtilityService.TryEvaluateExpression(raw, _settings.PreferredCurrency, out var calc))
+        {
+            try { System.Windows.Clipboard.SetText(calc); } catch { }
+            ShowToast("🧮", $"Скопировано: {calc}", durationMs: 2400);
+            return;
+        }
+
+        try
+        {
+            if (raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                File.Exists(raw) || Directory.Exists(raw))
+            {
+                OpenShellTarget(raw);
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo("cmd.exe", $"/c start \"\" {raw}")
+                {
+                    UseShellExecute = true,
+                    CreateNoWindow = true
+                });
+            }
+            HomeCommandBox.Text = string.Empty;
+            HomeCommandCard.Visibility = Visibility.Collapsed;
+            ScheduleExpandedResize(animate: true);
+            ShowToast("⚡", $"Выполнено: {raw}", durationMs: 2200);
+        }
+        catch (Exception ex)
+        {
+            ShowToast("⚠", $"Не удалось выполнить: {ex.Message}", durationMs: 3000);
+        }
+    }
+
+    private void HomeMediaCard_Click(object sender, MouseButtonEventArgs e) => OpenTab("Remote");
+
+    private void HomeWeatherCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        _ = RefreshWeatherAsync();
+        ShowToast("⛅", "Обновление погоды...", durationMs: 1400);
+    }
+
+    private void CollapseIslandBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _isPinned = false;
+        PinBtn.IsChecked = false;
+        SetExpanded(false);
+    }
+
+    private void JumpToAudioMixer_Click(object sender, RoutedEventArgs e)
+    {
+        TabRemote.IsChecked = true;
+        if (!_isAppMixerExpanded)
+        {
+            _isAppMixerExpanded = true;
+            AppMixerList.Visibility = Visibility.Visible;
+        }
+        _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void SystemDetailsToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _isSystemDetailsExpanded = !_isSystemDetailsExpanded;
+        SystemDetailsSection.Visibility = _isSystemDetailsExpanded ? Visibility.Visible : Visibility.Collapsed;
+        SystemDetailsToggleBtn.Content = _isSystemDetailsExpanded
+            ? "Скрыть диски, Bluetooth, сеть и процессы ▴"
+            : "Диски, Bluetooth, сеть и процессы ▾";
+        if (_isSystemDetailsExpanded)
+        {
+            RefreshDrives();
+            _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
+        }
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private async void CtrlWifi_Click(object sender, RoutedEventArgs e)
+    {
+        var (ok, msg) = await QuickToolsService.ToggleWifiOrNetworkAsync();
+        ShowToast(ok ? "📶" : "🌐", msg, durationMs: 2400);
+        await Task.Delay(350);
+        RefreshSystemControlCenterUi(HardwareAndUtilityService.GetConnectedGamepads());
+    }
+
+    private void CtrlAirplane_Click(object sender, RoutedEventArgs e)
+    {
+        QuickToolsService.OpenAirplaneSettings();
+        ShowToast("✈", "Параметры режима полёта", durationMs: 2000);
+    }
+
+    private void CtrlVpn_Click(object sender, RoutedEventArgs e)
+    {
+        QuickToolsService.ToggleOrOpenVpn();
+        ShowToast("🛡", "Открыт VPN / параметры сети", durationMs: 2400);
+        RefreshSystemControlCenterUi(HardwareAndUtilityService.GetConnectedGamepads());
+    }
+
+    private void CtrlDesktop_Click(object sender, RoutedEventArgs e)
+    {
+        bool ok = QuickToolsService.ToggleDesktopIcons();
+        CtrlDesktopCircle.Background = ok
+            ? new SolidColorBrush(MediaColor.FromRgb(30, 58, 138))
+            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        ShowToast("🖥", ok ? "Иконки рабочего стола переключены" : "Не удалось переключить иконки", durationMs: 2000);
+    }
+
+    private void RebootPc_Click(object sender, RoutedEventArgs e)
+    {
+        var res = System.Windows.MessageBox.Show(
+            "Перезагрузить компьютер сейчас?",
+            "Desktop Island",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (res == MessageBoxResult.Yes)
+            QuickToolsService.RebootPc();
+    }
+
+    private void ShutdownPc_Click(object sender, RoutedEventArgs e)
+    {
+        var res = System.Windows.MessageBox.Show(
+            "Выключить компьютер сейчас?",
+            "Desktop Island",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (res == MessageBoxResult.Yes)
+            QuickToolsService.ShutdownPc();
+    }
+
+    private void RefreshSystemControlCenterUi(List<(int Index, int BatteryPercent, bool IsWired)> gamepads)
+    {
+        // Network / Wi-Fi / Airplane / VPN state
+        var net = QuickToolsService.GetControlCenterNetworkStatus();
+        bool wifiActive = net.WifiOn || net.LanConnected;
+        CtrlWifiCircle.Background = wifiActive
+            ? new SolidColorBrush(MediaColor.FromRgb(37, 99, 235))
+            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        CtrlWifiLabel.Text = net.WifiOn ? "Wi-Fi Вкл" : (net.LanConnected ? "Сеть Вкл" : "Wi-Fi Выкл");
+
+        bool btOn = _allBtDevices.Count > 0 || BtStateText.Text.Contains("Включён", StringComparison.OrdinalIgnoreCase);
+        CtrlBtCircle.Background = btOn
+            ? new SolidColorBrush(MediaColor.FromRgb(37, 99, 235))
+            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        CtrlBtLabel.Text = btOn ? "BT Вкл" : "Bluetooth";
+
+        CtrlAirplaneCircle.Background = net.AirplaneOn
+            ? new SolidColorBrush(MediaColor.FromRgb(217, 119, 6))
+            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+
+        CtrlVpnCircle.Background = net.VpnActive
+            ? new SolidColorBrush(MediaColor.FromRgb(22, 163, 74))  // Bright Green when VPN active (like Screenshot 5)
+            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        CtrlVpnLabel.Text = net.VpnActive ? net.VpnLabel : "VPN";
+
+        // Discord voice status
+        var (discordRunning, discordInVoice) = HardwareAndUtilityService.GetDiscordVoiceStatus();
+        if (discordInVoice)
+        {
+            DiscordStatusText.Text = "В голосовом канале";
+            DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(74, 222, 128));
+        }
+        else if (discordRunning)
+        {
+            DiscordStatusText.Text = "Discord запущен (не в голосе)";
+            DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(161, 161, 170));
+        }
+        else
+        {
+            DiscordStatusText.Text = "Discord не запущен";
+            DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(113, 113, 122));
+        }
+
+        // Device batteries summary (Bluetooth + XInput gamepads)
+        var batParts = new List<string>();
+        foreach (var d in _allBtDevices.Where(x => x.IsConnected))
+        {
+            batParts.Add(d.BatteryPercent.HasValue
+                ? $"{d.Name}: {d.BatteryPercent.Value}%"
+                : $"{d.Name}: подключено");
+        }
+        foreach (var pad in gamepads)
+        {
+            batParts.Add(pad.IsWired
+                ? $"Геймпад #{pad.Index}: провод"
+                : $"Геймпад #{pad.Index}: {pad.BatteryPercent}%");
+        }
+        SysBatterySummaryText.Text = batParts.Count > 0
+            ? string.Join("\n", batParts.Take(3))
+            : "Bluetooth-устройства не подключены";
+    }
+
+    #endregion
+
     public void CleanupBeforeExit()
     {
         _clockTimer.Stop();
@@ -4567,6 +5873,7 @@ public partial class MainWindow : Window
         _ramLabelResetTimer.Stop();
         _toastTimer.Stop();
         _weatherTimer.Stop();
+        _updateTimer.Stop();
         _gameInputTimer.Stop();
         _borderAlertResetTimer.Stop();
         _magnetTimer.Stop();

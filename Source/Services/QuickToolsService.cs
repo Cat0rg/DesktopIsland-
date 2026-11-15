@@ -184,7 +184,7 @@ public static class QuickToolsService
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/Cat0rg/DesktopIsland-/releases/latest");
-            req.Headers.UserAgent.ParseAdd("DesktopIsland/1.4");
+            req.Headers.UserAgent.ParseAdd("DesktopIsland/1.6");
             using var resp = await Http.SendAsync(req);
             if (!resp.IsSuccessStatusCode) return (false, string.Empty, string.Empty);
 
@@ -218,6 +218,137 @@ public static class QuickToolsService
     public static void SleepPc()
     {
         try { SetSuspendState(false, false, false); } catch { }
+    }
+
+    public static void RebootPc()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("shutdown.exe", "/r /t 0")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+        }
+        catch { }
+    }
+
+    public static void SetDoNotDisturbEnabled(bool enabled)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings");
+            key.SetValue("NOC_GLOBAL_SETTING_TOASTS_ENABLED", enabled ? 0 : 1, RegistryValueKind.DWord);
+        }
+        catch { }
+    }
+
+    public static (bool HasWifi, bool WifiOn, bool LanConnected, bool AirplaneOn, bool VpnActive, string VpnLabel) GetControlCenterNetworkStatus()
+    {
+        bool hasWifi = false, wifiOn = false, lanConnected = false, airplaneOn = false, vpnActive = false;
+        string vpnLabel = "Выкл.";
+
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                bool up = ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up;
+                string nameDesc = $"{ni.Name} {ni.Description}";
+
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211)
+                {
+                    hasWifi = true;
+                    if (up) wifiOn = true;
+                }
+                else if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Ppp ||
+                         ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Tunnel ||
+                         nameDesc.Contains("WireGuard", StringComparison.OrdinalIgnoreCase) ||
+                         nameDesc.Contains("OpenVPN", StringComparison.OrdinalIgnoreCase) ||
+                         nameDesc.Contains("Amnezia", StringComparison.OrdinalIgnoreCase) ||
+                         nameDesc.Contains("WARP", StringComparison.OrdinalIgnoreCase) ||
+                         nameDesc.Contains("Wintun", StringComparison.OrdinalIgnoreCase) ||
+                         nameDesc.Contains("Proton", StringComparison.OrdinalIgnoreCase) ||
+                         nameDesc.Contains("Nord", StringComparison.OrdinalIgnoreCase) ||
+                         nameDesc.Contains("VPN", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (up)
+                    {
+                        vpnActive = true;
+                        vpnLabel = "Рабочий";
+                    }
+                }
+                else if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Ethernet && up)
+                {
+                    lanConnected = true;
+                }
+            }
+        }
+        catch { }
+
+        try
+        {
+            using var radioKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\RadioManagement\SystemRadioState");
+            if (radioKey?.GetValue(null) is int radioVal)
+                airplaneOn = radioVal == 1;
+        }
+        catch { }
+
+        return (hasWifi, wifiOn, lanConnected, airplaneOn, vpnActive, vpnLabel);
+    }
+
+    public static async Task<(bool ToggledWifi, string Message)> ToggleWifiOrNetworkAsync()
+    {
+        try
+        {
+            var radios = await Windows.Devices.Radios.Radio.GetRadiosAsync();
+            var wifi = System.Linq.Enumerable.FirstOrDefault(radios, r => r.Kind == Windows.Devices.Radios.RadioKind.WiFi);
+            if (wifi != null)
+            {
+                bool nextOn = wifi.State != Windows.Devices.Radios.RadioState.On;
+                var res = await wifi.SetStateAsync(nextOn ? Windows.Devices.Radios.RadioState.On : Windows.Devices.Radios.RadioState.Off);
+                if (res == Windows.Devices.Radios.RadioAccessStatus.Allowed)
+                    return (true, nextOn ? "Wi-Fi включён" : "Wi-Fi выключен");
+            }
+        }
+        catch { }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("ms-settings:network-status") { UseShellExecute = true });
+        }
+        catch { }
+        return (false, "Открыты параметры сети");
+    }
+
+    public static void OpenAirplaneSettings()
+    {
+        try { Process.Start(new ProcessStartInfo("ms-settings:network-airplanemode") { UseShellExecute = true }); } catch { }
+    }
+
+    public static void ToggleOrOpenVpn()
+    {
+        try
+        {
+            string[] knownExes =
+            {
+                @"C:\Program Files\AmneziaVPN\AmneziaVPN.exe",
+                @"C:\Program Files\WireGuard\wireguard.exe",
+                @"C:\Program Files\Cloudflare\Cloudflare WARP\Cloudflare WARP.exe",
+                @"C:\Program Files\OpenVPN Connect\OpenVPNConnect.exe",
+                @"C:\Program Files\Proton\VPN\ProtonVPN.Launcher.exe"
+            };
+            foreach (var exe in knownExes)
+            {
+                if (System.IO.File.Exists(exe))
+                {
+                    Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+                    return;
+                }
+            }
+            Process.Start(new ProcessStartInfo("ms-settings:network-vpn") { UseShellExecute = true });
+        }
+        catch { }
     }
 
     public static void TurnOffMonitors()
@@ -354,6 +485,8 @@ public static class QuickToolsService
             {
                 City = cityName,
                 TempC = temp,
+                WmoCode = code,
+                ConditionText = MapWmoCondition(code),
                 IconGlyph = MapWmoCode(code),
                 RainAlertText = rainAlert
             };
@@ -363,6 +496,22 @@ public static class QuickToolsService
             return null;
         }
     }
+
+    private static string MapWmoCondition(int code) => code switch
+    {
+        0 => "Ясно",
+        1 => "Почти ясно",
+        2 => "Переменно",
+        3 => "Пасмурно",
+        45 or 48 => "Туман",
+        >= 51 and <= 57 => "Морось",
+        >= 61 and <= 67 => "Дождь",
+        >= 71 and <= 77 => "Снег",
+        >= 80 and <= 82 => "Ливень",
+        >= 85 and <= 86 => "Снегопад",
+        >= 95 => "Гроза",
+        _ => "Облачно"
+    };
 
     private static string MapWmoCode(int code) => code switch
     {

@@ -1,0 +1,62 @@
+<Window x:Class="DesktopIsland.Views.ScreenColorPickerOverlay"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Cursor="Cross"
+        KeyDown="Window_KeyDown"
+        Loaded="Window_Loaded">
+    <Grid>
+        <Image x:Name="SnapshotImg" Stretch="Fill"/>
+        <Canvas x:Name="OverlayCanvas"
+                Background="#01000000"
+                MouseMove="OverlayCanvas_MouseMove"
+                MouseLeftButtonUp="OverlayCanvas_MouseLeftButtonUp"
+                MouseRightButtonUp="OverlayCanvas_MouseRightButtonUp">
+
+            <Border x:Name="TopHintPill"
+                    Background="#E611131C"
+                    BorderBrush="#EC4899"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="14,7"
+                    IsHitTestVisible="False">
+                <TextBlock Text="Наведите на пиксель и нажмите ЛКМ · Esc / ПКМ — отмена"
+                           Foreground="#F8FAFC"
+                           FontSize="12.5"
+                           FontWeight="SemiBold"/>
+            </Border>
+
+            <!-- Floating Loupe Card -->
+            <Border x:Name="LoupeCard"
+                    Background="#F011131C"
+                    BorderBrush="#334155"
+                    BorderThickness="1.2"
+                    CornerRadius="14"
+                    Padding="8"
+                    IsHitTestVisible="False"
+                    Visibility="Collapsed">
+                <StackPanel>
+                    <Border Width="99" Height="99" CornerRadius="10" ClipToBounds="True" BorderBrush="#475569" BorderThickness="1">
+                        <Grid>
+                            <Image x:Name="LoupeImage" Width="99" Height="99" RenderOptions.BitmapScalingMode="NearestNeighbor" Stretch="Fill"/>
+                            <!-- Center target pixel crosshair (9x9 box in 99x99 grid for 11x11 px zoom) -->
+                            <Border Width="11" Height="11" BorderBrush="#FFFFFF" BorderThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Border BorderBrush="#000000" BorderThickness="0.8"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,2">
+                        <Ellipse x:Name="ColorDot" Width="13" Height="13" Stroke="#FFFFFF" StrokeThickness="1.2" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="HexText" Text="#FFFFFF" FontSize="12.5" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock x:Name="RgbText" Text="RGB(255, 255, 255)" FontSize="10" Foreground="#94A3B8" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Canvas>
+    </Grid>
+</Window>

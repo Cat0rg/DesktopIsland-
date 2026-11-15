@@ -87,7 +87,13 @@ public partial class SettingsWindow : Window
             "RUB" => 4,
             _ => 0
         };
-        DockToTopChk.IsChecked = _workingCopy.DockToTopEdge;
+        DockModeCombo.SelectedIndex = _workingCopy.DockEdge switch
+        {
+            "Left" => 2,
+            "Right" => 3,
+            "Free" => 4,
+            _ => _workingCopy.DockToTopEdge ? 0 : 1
+        };
         AlwaysOnTopChk.IsChecked = _workingCopy.AlwaysOnTop;
         ExpandOnHoverChk.IsChecked = _workingCopy.ExpandOnHover;
         EnableAnimationsChk.IsChecked = _workingCopy.EnableAnimations;
@@ -250,8 +256,34 @@ public partial class SettingsWindow : Window
         if (CurrencyCombo.SelectedItem is ComboBoxItem curItem && curItem.Tag is string curTag)
             _workingCopy.PreferredCurrency = curTag;
         _workingCopy.CapsuleOpacity = OpacitySlider.Value;
-        _workingCopy.TopOffsetPx = int.TryParse(TopOffsetBox.Text, out var top) ? Math.Clamp(top, 0, 100) : 6;
-        _workingCopy.DockToTopEdge = DockToTopChk.IsChecked == true;
+        _workingCopy.TopOffsetPx = int.TryParse(TopOffsetBox.Text, out var top) ? Math.Clamp(top, 0, 100) : 8;
+        if (DockModeCombo.SelectedItem is ComboBoxItem dockItem && dockItem.Tag is string dockTag)
+        {
+            switch (dockTag)
+            {
+                case "TopFloating":
+                    _workingCopy.DockEdge = "Top";
+                    _workingCopy.DockToTopEdge = false;
+                    if (_workingCopy.TopOffsetPx == 0) _workingCopy.TopOffsetPx = 10;
+                    break;
+                case "Left":
+                    _workingCopy.DockEdge = "Left";
+                    _workingCopy.DockToTopEdge = false;
+                    break;
+                case "Right":
+                    _workingCopy.DockEdge = "Right";
+                    _workingCopy.DockToTopEdge = false;
+                    break;
+                case "Free":
+                    _workingCopy.DockEdge = "Free";
+                    _workingCopy.DockToTopEdge = false;
+                    break;
+                default:
+                    _workingCopy.DockEdge = "Top";
+                    _workingCopy.DockToTopEdge = true;
+                    break;
+            }
+        }
         _workingCopy.AlwaysOnTop = AlwaysOnTopChk.IsChecked == true;
         _workingCopy.ExpandOnHover = ExpandOnHoverChk.IsChecked == true;
         _workingCopy.EnableAnimations = EnableAnimationsChk.IsChecked == true;

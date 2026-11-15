@@ -18,10 +18,11 @@
         <SolidColorBrush x:Key="AccentBrightBrush" Color="#38BDF8"/>
         <SolidColorBrush x:Key="AccentSoftBrush" Color="#1E3A5F"/>
 
-        <Style x:Key="TabPillButton" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="#94A3B8"/>
+        <!-- Atoll-Style Monolith Header Tab Button (Shows Icon + Label pill when checked, monochrome Icon when unchecked) -->
+        <Style x:Key="AtollHeaderTabBtn" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#71717A"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Padding" Value="7,5"/>
             <Setter Property="Margin" Value="0,0,3,0"/>
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="Medium"/>
@@ -29,22 +30,44 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="11" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="1" CornerRadius="14" Padding="{TemplateBinding Padding}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Path x:Name="IconPath"
+                                      Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                      Stroke="{TemplateBinding Foreground}"
+                                      StrokeThickness="1.55"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      StrokeLineJoin="Round"
+                                      Width="14"
+                                      Height="14"
+                                      Stretch="Uniform"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TabLabel"
+                                           Text="{TemplateBinding Content}"
+                                           Foreground="#F4F4F5"
+                                           FontWeight="SemiBold"
+                                           FontSize="11"
+                                           Margin="6,0,2,0"
+                                           VerticalAlignment="Center"
+                                           Visibility="Collapsed"/>
+                            </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentBrush}"/>
-                                <Setter Property="Foreground" Value="#FFFFFF"/>
-                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#23242A"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#343640"/>
+                                <Setter TargetName="Bd" Property="Padding" Value="10,5"/>
+                                <Setter Property="Foreground" Value="#F4F4F5"/>
+                                <Setter TargetName="TabLabel" Property="Visibility" Value="Visible"/>
                             </Trigger>
                             <MultiTrigger>
                                 <MultiTrigger.Conditions>
                                     <Condition Property="IsMouseOver" Value="True"/>
                                     <Condition Property="IsChecked" Value="False"/>
                                 </MultiTrigger.Conditions>
-                                <Setter TargetName="Bd" Property="Background" Value="#252736"/>
-                                <Setter Property="Foreground" Value="#E2E8F0"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#1A1B20"/>
+                                <Setter Property="Foreground" Value="#D4D4D8"/>
                             </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -52,9 +75,10 @@
             </Setter>
         </Style>
 
+        <!-- Clean Pill Sub-Button -->
         <Style x:Key="SubPillButton" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="#94A3B8"/>
-            <Setter Property="Background" Value="#161722"/>
+            <Setter Property="Foreground" Value="#9CA3AF"/>
+            <Setter Property="Background" Value="#15161A"/>
             <Setter Property="Padding" Value="10,4"/>
             <Setter Property="Margin" Value="0,0,5,0"/>
             <Setter Property="FontSize" Value="11"/>
@@ -62,14 +86,14 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="#282B3C" BorderThickness="1" CornerRadius="9" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="#26272F" BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrightBrush}"/>
-                                <Setter Property="Foreground" Value="#F8FAFC"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#262830"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3E404C"/>
+                                <Setter Property="Foreground" Value="#FAFAFA"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -79,26 +103,219 @@
         </Style>
 
         <Style x:Key="DarkButton" TargetType="Button">
-            <Setter Property="Background" Value="#232433"/>
-            <Setter Property="Foreground" Value="#E2E8F0"/>
-            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="#1C1D22"/>
+            <Setter Property="Foreground" Value="#E4E4E7"/>
+            <Setter Property="BorderBrush" Value="#2B2C34"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="FontSize" Value="11"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="9" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="11" Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform>
+                                <ScaleTransform x:Name="BtnScale" ScaleX="1" ScaleY="1"/>
+                            </Border.RenderTransform>
                             <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleX" To="1.03" Duration="0:0:0.14">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleY" To="1.03" Duration="0:0:0.14">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleX" To="1.0" Duration="0:0:0.16">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleY" To="1.0" Duration="0:0:0.16">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#313347"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#262830"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3E404C"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.84"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleX" To="0.96" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleY" To="0.96" Duration="0:0:0.08"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleX" To="1.03" Duration="0:0:0.12"/>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale" Storyboard.TargetProperty="ScaleY" To="1.03" Duration="0:0:0.12"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Atoll-Style Top Wide Capsule Quick Action Button -->
+        <Style x:Key="AtollCapsuleBtn" TargetType="Button">
+            <Setter Property="Background" Value="#15161A"/>
+            <Setter Property="BorderBrush" Value="#24252C"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#F4F4F5"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="22"
+                                Padding="{TemplateBinding Padding}"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform>
+                                <ScaleTransform x:Name="CapScale" ScaleX="1" ScaleY="1"/>
+                            </Border.RenderTransform>
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleX" To="1.035" Duration="0:0:0.16">
+                                            <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.3"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleY" To="1.035" Duration="0:0:0.16">
+                                            <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.3"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleX" To="1.0" Duration="0:0:0.18">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleY" To="1.0" Duration="0:0:0.18">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1E1F25"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#363844"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.86"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleX" To="0.95" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleY" To="0.95" Duration="0:0:0.08"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleX" To="1.035" Duration="0:0:0.12"/>
+                                            <DoubleAnimation Storyboard.TargetName="CapScale" Storyboard.TargetProperty="ScaleY" To="1.035" Duration="0:0:0.12"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Atoll-Style Unboxed Circular Tool Button (No box frame, circular badge + label below) -->
+        <Style x:Key="AtollUnboxedBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#D4D4D8"/>
+            <Setter Property="Padding" Value="2,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="Transparent"
+                                CornerRadius="14"
+                                Padding="{TemplateBinding Padding}"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform>
+                                <ScaleTransform x:Name="TileScale" ScaleX="1" ScaleY="1"/>
+                            </Border.RenderTransform>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleX" To="1.08" Duration="0:0:0.16">
+                                            <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.4"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleY" To="1.08" Duration="0:0:0.16">
+                                            <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.4"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleX" To="1.0" Duration="0:0:0.18">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleY" To="1.0" Duration="0:0:0.18">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.82"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleX" To="0.93" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleY" To="0.93" Duration="0:0:0.08"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleX" To="1.08" Duration="0:0:0.12"/>
+                                            <DoubleAnimation Storyboard.TargetName="TileScale" Storyboard.TargetProperty="ScaleY" To="1.08" Duration="0:0:0.12"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -233,8 +450,8 @@
                         Width="380"
                         Height="36"
                         CornerRadius="18"
-                        Background="#FC0D0E14"
-                        BorderBrush="#2E3245"
+                        Background="#FC090A0D"
+                        BorderBrush="#24252C"
                         BorderThickness="1"
                         ClipToBounds="True"
                         AllowDrop="True"
@@ -249,13 +466,23 @@
                     <Grid VerticalAlignment="Top">
                         <!-- COMPACT BAR -->
                         <Grid x:Name="CompactContentGrid" Height="36" VerticalAlignment="Top" Visibility="Visible">
-                            <!-- Normal metrics strip -->
+                            <!-- Normal metrics strip (Desktop: Mic/Status dot · Time · Colored Weather | Game: GameCircle · FPS · CPU · GPU · Temp) -->
                             <StackPanel x:Name="CompactMetricsStrip"
                                         Orientation="Horizontal"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
                                         Margin="12,0">
-                                <Ellipse x:Name="StatusDot" Width="6.5" Height="6.5" Fill="{DynamicResource AccentBrightBrush}" Margin="0,0,7,0" VerticalAlignment="Center" ToolTip="Статус островка"/>
+                                <!-- Mic / Status Dot (NO eyes when active; eyes appear strictly in idle mode!) -->
+                                <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="#22C55E" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Статус микрофона / камеры"/>
+
+                                <!-- Active Game Circular Icon Badge (visible only in game mode) -->
+                                <Border x:Name="CompactGameIconBadge" Width="21" Height="21" CornerRadius="10.5" Background="#16171C" BorderBrush="#333540" BorderThickness="1.2" Margin="0,0,7,0" Visibility="Collapsed" VerticalAlignment="Center">
+                                    <Grid>
+                                        <Image x:Name="CompactGameExeIcon" Width="13" Height="13" Stretch="UniformToFill" Visibility="Collapsed"/>
+                                        <Path x:Name="CompactGameFallbackGlyph" Data="M 4,7 L 12,7 C 13.5,7 14.5,8.2 14.5,9.5 C 14.5,10.8 13.5,12 12,12 L 10.5,12 L 9.5,10.5 L 6.5,10.5 L 5.5,12 L 4,12 C 2.5,12 1.5,10.8 1.5,9.5 C 1.5,8.2 2.5,7 4,7 Z" Fill="#4ADE80" Width="12" Height="12" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
                                 <Border x:Name="ScreenRecordBadge" Background="#7F1D1D" BorderBrush="#EF4444" BorderThickness="1" CornerRadius="7" Padding="5,0.5" Margin="0,0,5,0" Visibility="Collapsed" VerticalAlignment="Center" Cursor="Hand" MouseLeftButtonUp="ScreenRecordBadge_Click" ToolTip="Идёт запись экрана (нажмите чтобы остановить)">
                                     <TextBlock x:Name="ScreenRecordTimerText" Text="● REC 00:00" FontSize="9" FontWeight="Bold" Foreground="#FEE2E2"/>
                                 </Border>
@@ -264,22 +491,31 @@
                                 </Border>
                                 <TextBlock x:Name="GameMicWarnIcon" Text="🔇" FontSize="10.5" Foreground="#F87171" Margin="0,0,5,0" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Микрофон выключен в игре!"/>
 
-                                <TextBlock x:Name="CompactTimeText" Text="12:00" FontSize="12.5" FontWeight="SemiBold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="CompactSessionText" Text="" FontSize="10.5" Foreground="#64748B" Margin="5,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
-                                <TextBlock x:Name="CompactWeatherText" Text="" FontSize="11" Foreground="#94A3B8" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <TextBlock x:Name="CompactTimeText" Text="12:00" FontSize="12.5" FontWeight="SemiBold" Foreground="#F4F4F5" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="CompactSessionText" Text="" FontSize="10.5" Foreground="#71717A" Margin="5,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
 
-                                <Border x:Name="CompactTimerPill" Background="{DynamicResource AccentSoftBrush}" CornerRadius="8" Padding="6,1.5" Margin="6,0,0,0" Visibility="Collapsed" VerticalAlignment="Center">
+                                <!-- Colored Vector Weather Icon + Temp in Compact Bar -->
+                                <StackPanel x:Name="CompactWeatherGroup" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed">
+                                    <Grid x:Name="CompactWeatherIconCanvas" Width="15" Height="15" VerticalAlignment="Center" Margin="0,0,4,0">
+                                        <Ellipse x:Name="CompactSunShape" Width="7.5" Height="7.5" Fill="#FBBF24" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="1,1,0,0"/>
+                                        <Path x:Name="CompactCloudShape" Data="M 4,13 H 12.5 A 2.5,2.5 0 0 0 12.5,8 A 3.5,3.5 0 0 0 5.8,7.2 A 2.8,2.8 0 0 0 4,13 Z" Fill="#E4E4E7" Stretch="Uniform" Width="12" Height="9" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,0.5"/>
+                                        <Path x:Name="CompactRainShape" Data="M 5,13.5 L 4.3,15 M 8.5,13.5 L 7.8,15 M 11.5,13.5 L 10.8,15" Stroke="#38BDF8" StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/>
+                                    </Grid>
+                                    <TextBlock x:Name="CompactWeatherText" Text="4°" FontSize="12" FontWeight="SemiBold" Foreground="#F4F4F5" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <Border x:Name="CompactTimerPill" Background="#1D2234" CornerRadius="8" Padding="6,1.5" Margin="6,0,0,0" Visibility="Collapsed" VerticalAlignment="Center">
                                     <TextBlock x:Name="CompactTimerText" Text="🌙 30:00" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}"/>
                                 </Border>
 
-                                <TextBlock x:Name="CompactSep1" Text="·" FontSize="12" Foreground="#475569" Margin="6,0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="CompactSep1" Text="·" FontSize="12" Foreground="#52525B" Margin="6,0" VerticalAlignment="Center"/>
 
-                                <!-- FPS left of CPU, highlighted in accent blue -->
-                                <TextBlock x:Name="CompactFpsText" Text="0 FPS" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}" VerticalAlignment="Center" Margin="0,0,5,0" Visibility="Collapsed"/>
-                                <TextBlock x:Name="CompactSysText" FontSize="11" VerticalAlignment="Center">
-                                    <Run x:Name="CpuLabelRun" Text="CPU " Foreground="#64748B"/><Run x:Name="CpuValRun" Text="0%" Foreground="#E2E8F0" FontWeight="SemiBold"/><Run x:Name="GpuSepRun" Text="" Foreground="#475569"/><Run x:Name="GpuLabelRun" Text="" Foreground="#64748B"/><Run x:Name="GpuValRun" Text="" Foreground="#38BDF8" FontWeight="SemiBold"/><Run x:Name="GpuTempRun" Text="" Foreground="#FBBF24" FontWeight="SemiBold"/><Run x:Name="RamSepRun" Text=" · " Foreground="#475569"/><Run x:Name="RamLabelRun" Text="RAM " Foreground="#64748B"/><Run x:Name="RamValRun" Text="0%" Foreground="#CBD5E1" FontWeight="SemiBold"/>
+                                <!-- In-Game Metrics: FPS (green >60 / red <60) + CPU % + GPU % + GPU Temp (red >85) -->
+                                <TextBlock x:Name="CompactFpsText" Text="0 FPS" FontSize="11.8" FontWeight="Bold" Foreground="#4ADE80" VerticalAlignment="Center" Margin="0,0,6,0" Visibility="Collapsed"/>
+                                <TextBlock x:Name="CompactSysText" FontSize="11.5" VerticalAlignment="Center">
+                                    <Run x:Name="CpuLabelRun" Text="CPU " Foreground="#9CA3AF"/><Run x:Name="CpuValRun" Text="0%" Foreground="#F4F4F5" FontWeight="SemiBold"/><Run x:Name="GpuSepRun" Text="" Foreground="#52525B"/><Run x:Name="GpuLabelRun" Text="" Foreground="#9CA3AF"/><Run x:Name="GpuValRun" Text="" Foreground="#4ADE80" FontWeight="SemiBold"/><Run x:Name="GpuTempRun" Text="" Foreground="#FBBF24" FontWeight="Bold"/><Run x:Name="RamSepRun" Text="" Foreground="#52525B"/><Run x:Name="RamLabelRun" Text="" Foreground="#9CA3AF"/><Run x:Name="RamValRun" Text="" Foreground="#D4D4D8" FontWeight="SemiBold"/>
                                 </TextBlock>
-                                <TextBlock x:Name="CompactPingText" Text="" FontSize="10.5" Foreground="#64748B" Margin="5,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <TextBlock x:Name="CompactPingText" Text="" FontSize="10.5" Foreground="#9CA3AF" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 <TextBlock x:Name="CompactNetJitterBadge" Text="📶" FontSize="10" Foreground="#FACC15" Margin="4,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Нестабильная сеть (потери/скачки пинга)"/>
                                 <TextBlock x:Name="CompactDownloadSurgeText" Text="" FontSize="10.5" FontWeight="SemiBold" Foreground="#38BDF8" Margin="5,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
 
@@ -293,6 +529,11 @@
 
                                 <TextBlock x:Name="CompactNetText" Text="" FontSize="10.5" Foreground="{DynamicResource AccentBrightBrush}" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                             </StackPanel>
+
+                            <!-- Visual CPU/GPU Load Bar Effect along bottom edge of Compact Bar -->
+                            <Border x:Name="CompactLoadBarHost" Height="2" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Margin="18,0" Background="Transparent" Visibility="Collapsed">
+                                <Border x:Name="CompactLoadBarFill" Height="2" CornerRadius="1" Width="0" HorizontalAlignment="Left" Background="#22C55E"/>
+                            </Border>
 
                             <!-- Sleek full-island Animated Music Mode (compact Apple Dynamic Island style, fixed compact width + real cover art + lively animations) -->
                             <Grid x:Name="CompactMusicStrip" Visibility="Collapsed" Margin="10,0" VerticalAlignment="Center" Height="36">
@@ -456,53 +697,53 @@
                         </Grid>
 
                         <!-- EXPANDED PANEL -->
-                        <Grid x:Name="ExpandedContentGrid" Visibility="Collapsed" Margin="14,10,14,12" VerticalAlignment="Top">
+                        <Grid x:Name="ExpandedContentGrid" Visibility="Collapsed" Margin="18,14,18,18" VerticalAlignment="Top">
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <!-- Header Bar (Transparent #01000000 lets empty gap drag smoothly) -->
-                            <Grid Grid.Row="0" Margin="0,0,0,8" Background="#01000000">
+                            <!-- Unified Atoll Header Bar: Left active tab pill + monochrome tab icons | Right mic dot + time + controls + collapse -->
+                            <Grid Grid.Row="0" Margin="0,0,0,12" Background="#01000000">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse x:Name="ExpandedStatusDot" Width="7" Height="7" Fill="{DynamicResource AccentBrightBrush}" Margin="0,0,7,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="ExpandedTimeText" Text="12:00:00" FontSize="14.5" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="ExpandedDateText" Text="сегодня" FontSize="11.5" Foreground="#64748B" Margin="8,1,0,0" VerticalAlignment="Center"/>
-
-                                    <Border x:Name="ExpandedToastPill" Background="{DynamicResource AccentSoftBrush}" CornerRadius="9" Padding="7,2" Margin="8,0,0,0" Visibility="Collapsed" VerticalAlignment="Center">
-                                        <TextBlock x:Name="ExpandedToastText" Text="" FontSize="10.5" Foreground="{DynamicResource AccentBrightBrush}"/>
-                                    </Border>
+                                    <RadioButton x:Name="TabApps" Content="Главная" Style="{StaticResource AtollHeaderTabBtn}" Tag="M 3,10 L 12,3 L 21,10 V 20 H 15 V 14 H 9 V 20 H 3 Z" IsChecked="True" Checked="Tab_Checked" ToolTip="Главная"/>
+                                    <RadioButton x:Name="TabRemote" Content="Музыка" Style="{StaticResource AtollHeaderTabBtn}" Tag="M 9,18 V 5 L 21,3 V 16 M 6,18 A 3,3 0 1 1 6,17.9 M 18,16 A 3,3 0 1 1 18,15.9" Checked="Tab_Checked" ToolTip="Музыка, микшер громкости и яркость"/>
+                                    <RadioButton x:Name="TabSystem" Content="Система" Style="{StaticResource AtollHeaderTabBtn}" Tag="M 13,2 L 4,14 H 12 L 11,22 L 20,10 H 12 Z" Checked="Tab_Checked" ToolTip="Пункт управления, CPU/GPU/RAM графики, Discord и DND"/>
+                                    <RadioButton x:Name="TabUtils" Content="Буфер" Style="{StaticResource AtollHeaderTabBtn}" Tag="M 8,4 H 16 A 2,2 0 0 1 18,6 V 20 A 2,2 0 0 1 16,22 H 8 A 2,2 0 0 1 6,20 V 6 A 2,2 0 0 1 8,4 Z M 9,2 H 15 V 5 H 9 Z" Checked="Tab_Checked" ToolTip="Умный буфер, полка файлов, QR и калькулятор"/>
+                                    <RadioButton x:Name="TabScreenTime" Content="Время" Style="{StaticResource AtollHeaderTabBtn}" Tag="M 12,3 A 9,9 0 1 0 12,21 A 9,9 0 1 0 12,3 M 12,7 V 12 L 15.5,14" Checked="Tab_Checked" ToolTip="Экранное время и игровая статистика"/>
+                                    <RadioButton x:Name="TabCleaner" Content="Очистка" Style="{StaticResource AtollHeaderTabBtn}" Tag="M 4,6 H 20 M 9,6 V 4 H 15 V 6 M 6,6 L 7,20 H 17 L 18,6" Margin="0" Checked="Tab_Checked" ToolTip="Безопасная очистка системы и ОЗУ"/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                    <Button x:Name="CenterPosBtn" Style="{StaticResource DarkButton}" Padding="0" Width="26" Height="26" Margin="0,0,5,0" Visibility="Collapsed" ToolTip="Отцентровать островок по центру экрана" Click="CenterPosBtn_Click">
-                                        <Border CornerRadius="13" Width="26" Height="26">
-                                            <TextBlock Text="⌖" FontSize="13.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
+                                    <Ellipse x:Name="ExpandedStatusDot" Width="7" Height="7" Fill="#22C55E" Margin="0,0,7,0" VerticalAlignment="Center" ToolTip="Индикатор микрофона / камеры"/>
+                                    <TextBlock x:Name="ExpandedTimeText" Text="12:00" FontSize="12.5" FontWeight="SemiBold" Foreground="#F4F4F5" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock x:Name="ExpandedDateText" Visibility="Collapsed"/>
+                                    <Border x:Name="ExpandedToastPill" Background="#1D2234" CornerRadius="9" Padding="7,2" Margin="0,0,6,0" Visibility="Collapsed" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ExpandedToastText" Text="" FontSize="10" Foreground="{DynamicResource AccentBrightBrush}"/>
+                                    </Border>
+
+                                    <Button x:Name="CenterPosBtn" Style="{StaticResource DarkButton}" Padding="0" Width="24" Height="24" Margin="0,0,4,0" Visibility="Collapsed" ToolTip="Отцентровать островок по центру экрана" Click="CenterPosBtn_Click">
+                                        <TextBlock Text="⌖" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Button>
-                                    <ToggleButton x:Name="EditAppsBtn" Style="{StaticResource IconToggleButton}" ToolTip="Редактировать приложения (порядок / добавление / удаление)" Margin="0,0,5,0" Checked="EditAppsBtn_Changed" Unchecked="EditAppsBtn_Changed">
-                                        <TextBlock Text="✎" FontSize="12"/>
+                                    <ToggleButton x:Name="EditAppsBtn" Style="{StaticResource IconToggleButton}" Width="24" Height="24" Background="#1A1B20" ToolTip="Редактировать закреплённые приложения" Margin="0,0,4,0" Checked="EditAppsBtn_Changed" Unchecked="EditAppsBtn_Changed">
+                                        <TextBlock Text="✎" FontSize="11.5"/>
                                     </ToggleButton>
-                                    <Button x:Name="EyeTopmostBtn" Width="26" Height="26" Margin="0,0,5,0" Cursor="Hand" ToolTip="Поверх всех окон" Click="EyeTopmostBtn_Click">
+                                    <Button x:Name="EyeTopmostBtn" Width="24" Height="24" Margin="0,0,4,0" Cursor="Hand" ToolTip="Поверх всех окон" Click="EyeTopmostBtn_Click">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
-                                                <Border x:Name="Bd" CornerRadius="13" Background="#232433">
+                                                <Border x:Name="Bd" CornerRadius="12" Background="#1A1B20">
                                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#313347"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Opacity" Value="0.82"/>
+                                                        <Setter TargetName="Bd" Property="Background" Value="#2A2B34"/>
                                                     </Trigger>
                                                 </ControlTemplate.Triggers>
                                             </ControlTemplate>
                                         </Button.Template>
-                                        <Border x:Name="EyeBtnBorder" Width="26" Height="26" CornerRadius="13" BorderThickness="1" BorderBrush="#38BDF8">
-                                            <Viewbox Width="15" Height="15" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Border x:Name="EyeBtnBorder" Width="24" Height="24" CornerRadius="12" BorderThickness="1" BorderBrush="#38BDF8">
+                                            <Viewbox Width="13" Height="13" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                 <Canvas Width="24" Height="24">
                                                     <Path x:Name="EyeOuterPath"
                                                           Data="M 2,12 C 5,6.5 9,4.5 12,4.5 C 15,4.5 19,6.5 22,12 C 19,17.5 15,19.5 12,19.5 C 9,19.5 5,17.5 2,12 Z"
@@ -512,13 +753,14 @@
                                             </Viewbox>
                                         </Border>
                                     </Button>
-                                    <ToggleButton x:Name="PinBtn" Style="{StaticResource IconToggleButton}" ToolTip="Закрепить панель открытой" Margin="0,0,5,0" Click="PinBtn_Click">
-                                        <TextBlock Text="📌" FontSize="11"/>
+                                    <ToggleButton x:Name="PinBtn" Style="{StaticResource IconToggleButton}" Width="24" Height="24" Background="#1A1B20" ToolTip="Закрепить панель открытой" Margin="0,0,4,0" Click="PinBtn_Click">
+                                        <TextBlock Text="📌" FontSize="10.5"/>
                                     </ToggleButton>
-                                    <Button Style="{StaticResource DarkButton}" Padding="0" Width="26" Height="26" ToolTip="Настройки Desktop Island" Click="SettingsBtn_Click">
-                                        <Border CornerRadius="13" Width="26" Height="26">
-                                            <TextBlock Text="⚙" FontSize="12.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
+                                    <Button Style="{StaticResource DarkButton}" Padding="0" Width="24" Height="24" Margin="0,0,4,0" Background="#1A1B20" BorderThickness="0" ToolTip="Настройки Desktop Island" Click="SettingsBtn_Click">
+                                        <TextBlock Text="⚙" FontSize="12" Foreground="#A1A1AA" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Button>
+                                    <Button x:Name="CollapseIslandBtn" Style="{StaticResource DarkButton}" Padding="0" Width="24" Height="24" Background="#1A1B20" BorderThickness="0" ToolTip="Свернуть островок" Click="CollapseIslandBtn_Click">
+                                        <Path Data="M 4,10 L 8,6 L 12,10" Stroke="#A1A1AA" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="16" Height="16"/>
                                     </Button>
                                 </StackPanel>
                             </Grid>
@@ -529,7 +771,7 @@
                                     Background="#24F59E0B"
                                     BorderBrush="#88F59E0B"
                                     BorderThickness="1"
-                                    CornerRadius="10"
+                                    CornerRadius="12"
                                     Padding="9,6"
                                     Margin="0,0,0,8"
                                     Visibility="Collapsed">
@@ -559,259 +801,453 @@
                                 </Grid>
                             </Border>
 
-                            <!-- Navigation Tab Pills -->
-                            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,9">
-                                <RadioButton x:Name="TabApps" Content="Запуск" Style="{StaticResource TabPillButton}" Padding="7.5,5" FontSize="10.8" IsChecked="True" Checked="Tab_Checked"/>
-                                <RadioButton x:Name="TabRemote" Content="Пульт" Style="{StaticResource TabPillButton}" Padding="7.5,5" FontSize="10.8" Checked="Tab_Checked"/>
-                                <RadioButton x:Name="TabUtils" Content="Буфер" Style="{StaticResource TabPillButton}" Padding="7.5,5" FontSize="10.8" Checked="Tab_Checked" ToolTip="Умный буфер, полка файлов, QR и калькулятор"/>
-                                <RadioButton x:Name="TabSystem" Content="Система" Style="{StaticResource TabPillButton}" Padding="7.5,5" FontSize="10.8" Checked="Tab_Checked"/>
-                                <RadioButton x:Name="TabScreenTime" Content="Время" Style="{StaticResource TabPillButton}" Padding="7.5,5" FontSize="10.8" Checked="Tab_Checked" ToolTip="Статистика экранного времени и игр за сессию"/>
-                                <RadioButton x:Name="TabCleaner" Content="Очистка" Style="{StaticResource TabPillButton}" Padding="7.5,5" FontSize="10.8" Margin="0" Checked="Tab_Checked"/>
-                            </StackPanel>
+                            <!-- TAB BODY (Animated Slide + Fade on open & tab switch, scrollable if needed) -->
+                            <ScrollViewer Grid.Row="2" MaxHeight="680" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <Grid x:Name="ExpandedTabBody" VerticalAlignment="Top" Margin="0,2,0,2">
+                                <Grid.RenderTransform>
+                                    <TranslateTransform x:Name="TabBodyTranslate" Y="0"/>
+                                </Grid.RenderTransform>
 
-                            <!-- TAB BODY -->
-                            <Grid Grid.Row="3" VerticalAlignment="Top">
-                                <!-- 1. LAUNCH APPS TAB (Max 4 per row, auto-fit height) -->
+                                <!-- 1. HOME / LAUNCH TAB (Atoll 1.4 Style: 6 Unboxed Circles + Music & Weather + macOS Pure Dock + Inline Search) -->
                                 <StackPanel x:Name="AppsPanel" Visibility="Visible">
-                                    <WrapPanel x:Name="AppsWrapPanel" Orientation="Horizontal" MaxWidth="436" HorizontalAlignment="Left"/>
+                                    <!-- Row 1: 6 UNBOXED Circular Colored Badges with labels below (Atoll Style) -->
+                                    <UniformGrid Columns="6" Margin="2,2,2,13">
+                                        <Button Style="{StaticResource AtollUnboxedBtn}" Click="QrFromClipboard_Click" ToolTip="Сделать QR-код из текста в буфере обмена">
+                                            <StackPanel HorizontalAlignment="Center">
+                                                <Border Width="42" Height="42" CornerRadius="21" Background="#122B1E" Margin="0,0,0,6" HorizontalAlignment="Center">
+                                                    <Path Data="M 4,4 H 9 V 9 H 4 Z M 13,4 H 18 V 9 H 13 Z M 4,13 H 9 V 18 H 4 Z M 13,13 H 15 V 15 H 13 Z M 16,16 H 18 V 18 H 16 Z" Stroke="#22C55E" StrokeThickness="1.6" StrokeLineJoin="Round" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="QR-код" FontSize="10.2" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <Button Style="{StaticResource AtollUnboxedBtn}" Click="ColorPicker_Click" ToolTip="Экранная пипетка: выбрать цвет пикселя с лупой и скопировать HEX">
+                                            <StackPanel HorizontalAlignment="Center">
+                                                <Border Width="42" Height="42" CornerRadius="21" Background="#2E151C" Margin="0,0,0,6" HorizontalAlignment="Center">
+                                                    <Path Data="M 15,3 L 19,7 L 16,10 L 17,11 L 15,13 L 14,12 L 8,18 L 4,19 L 5,15 L 11,9 L 10,8 L 12,6 L 13,7 Z" Stroke="#F43F5E" StrokeThickness="1.6" StrokeLineJoin="Round" Width="17" Height="17" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Пипетка" FontSize="10.2" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <Button Style="{StaticResource AtollUnboxedBtn}" Click="CleanClipboardFormatting_Click" ToolTip="Очистить лишние стили/форматирование текста в буфере">
+                                            <StackPanel HorizontalAlignment="Center">
+                                                <Border Width="42" Height="42" CornerRadius="21" Background="#122436" Margin="0,0,0,6" HorizontalAlignment="Center">
+                                                    <Path Data="M 15,5 L 19,9 L 10,18 H 5 L 4,17 L 15,5 Z M 8,18 H 20" Stroke="#38BDF8" StrokeThickness="1.6" StrokeLineJoin="Round" Width="17" Height="17" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Чистый текст" FontSize="10" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <Button x:Name="HomeRecordTile" Style="{StaticResource AtollUnboxedBtn}" Click="ToggleScreenRecord_Click" ToolTip="Записать экран в MP4 (Видео\DesktopIsland)">
+                                            <StackPanel HorizontalAlignment="Center">
+                                                <Border x:Name="HomeRecordCircle" Width="42" Height="42" CornerRadius="21" Background="#2F1716" Margin="0,0,0,6" HorizontalAlignment="Center">
+                                                    <Path x:Name="HomeRecordCameraPath" Data="M 3,7 A 2,2 0 0 1 5,5 H 13 A 2,2 0 0 1 15,7 V 15 A 2,2 0 0 1 13,17 H 5 A 2,2 0 0 1 3,15 Z M 15,9 L 20,6.5 V 15.5 L 15,13 Z" Stroke="#EF4444" StrokeThickness="1.6" StrokeLineJoin="Round" Width="17" Height="17" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock x:Name="HomeRecordLabel" Text="Запись экрана" FontSize="10" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <Button Style="{StaticResource AtollUnboxedBtn}" Click="ToggleQuickCommand_Click" ToolTip="Быстрый запуск команды, пути, URL или калькулятора">
+                                            <StackPanel HorizontalAlignment="Center">
+                                                <Border Width="42" Height="42" CornerRadius="21" Background="#1F2028" Margin="0,0,0,6" HorizontalAlignment="Center">
+                                                    <TextBlock Text="&gt;_" FontSize="12.5" FontWeight="Bold" Foreground="#A1A1AA" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Команда" FontSize="10.2" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <Button x:Name="HomeTranslateCircleBtn" Style="{StaticResource AtollUnboxedBtn}" Click="ScreenTranslate_Click" ToolTip="Перевод выделенной области экрана (RU ⇄ EN)">
+                                            <StackPanel HorizontalAlignment="Center">
+                                                <Border Width="42" Height="42" CornerRadius="21" Background="#2C200E" Margin="0,0,0,6" HorizontalAlignment="Center">
+                                                    <TextBlock Text="Аа" FontSize="13.5" FontWeight="Bold" Foreground="#F59E0B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Перевод" FontSize="10.2" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </UniformGrid>
+
+                                    <!-- Expandable Screen Translator Result Card -->
+                                    <Border x:Name="HomeTranslateCard" Background="#15161A" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="14" Padding="10,8" Margin="0,0,0,9" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,5">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="Перевод экрана" FontSize="11" FontWeight="SemiBold" Foreground="#FBBF24" VerticalAlignment="Center"/>
+                                                    <Button x:Name="HomeTranslateSwapBtn" Content="Авто (RU - EN)" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="9.5" Margin="8,0,0,0" Click="SwapTranslateDirection_Click" ToolTip="Переключить направление: Авто / EN→RU / RU→EN"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                    <Button Content="Копировать" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="9.5" Margin="0,0,4,0" Click="CopyTranslateResult_Click"/>
+                                                    <Button Content="Оригинал" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="9.5" Margin="0,0,4,0" Click="CopyTranslateOriginal_Click"/>
+                                                    <Button Content="✕" Style="{StaticResource DarkButton}" Padding="6,2" FontSize="9.5" Click="CloseTranslateCard_Click"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock x:Name="HomeTranslateOriginalText" Text="" FontSize="10" Foreground="#9CA3AF" TextWrapping="Wrap" MaxHeight="52" TextTrimming="CharacterEllipsis" Margin="0,0,0,4"/>
+                                            <Border Background="#0D0E12" CornerRadius="9" Padding="8,6">
+                                                <TextBox x:Name="HomeTranslateOutputBox" IsReadOnly="True" Background="Transparent" BorderThickness="0" Foreground="#F4F4F5" FontSize="11.5" FontWeight="Medium" TextWrapping="Wrap" MaxHeight="110" VerticalScrollBarVisibility="Auto"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Expandable Quick Command Bar -->
+                                    <Border x:Name="HomeCommandCard" Background="#15161A" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="13" Padding="8,7" Margin="0,0,0,9" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="HomeCommandBox" Grid.Column="0" Background="#0D0E12" Foreground="#F4F4F5" BorderBrush="#2A2B33" BorderThickness="1" Padding="8,5" FontSize="11" CaretBrush="#38BDF8" KeyDown="HomeCommandBox_KeyDown" TextChanged="HomeCommandBox_TextChanged"/>
+                                                <TextBlock x:Name="HomeCommandPlaceholder" Grid.Column="0" Text="cmd / URL / путь / расчёт (49$ или 250*1.2)..." FontSize="10.2" Foreground="#71717A" Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                                <Button Grid.Column="1" Content="▶" Style="{StaticResource AccentButton}" Padding="9,4" FontSize="10.5" Margin="6,0,0,0" Click="RunQuickCommand_Click"/>
+                                                <Button Grid.Column="2" Content="✕" Style="{StaticResource DarkButton}" Padding="7,4" FontSize="10" Margin="4,0,0,0" Click="CloseQuickCommand_Click"/>
+                                            </Grid>
+                                            <TextBlock x:Name="HomeCommandCalcPreview" Text="" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}" Margin="2,4,0,0" Visibility="Collapsed"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Row 3: Music Card (with player source switcher) + Colored Vector Weather Card -->
+                                    <Grid Margin="0,0,0,11">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="9"/>
+                                            <ColumnDefinition Width="166"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Music Card with Autoselector (Авто / Spotify / SoundCloud / YT Music) -->
+                                        <Border Grid.Column="0" Background="#18191F" BorderBrush="#252730" BorderThickness="1" CornerRadius="18" Padding="13,11">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border x:Name="HomeMediaThumbBorder" Grid.Column="0" Width="38" Height="38" CornerRadius="10" Background="#23252E" Margin="0,0,10,0" ClipToBounds="True" VerticalAlignment="Center">
+                                                        <Grid>
+                                                            <Path x:Name="HomeMediaFallbackNote" Data="M 9,16 V 6 L 18,4 V 14 M 7,16 A 2.2,2.2 0 1 1 7,15.9 M 16,14 A 2.2,2.2 0 1 1 16,13.9" Stroke="#A1A1AA" StrokeThickness="1.6" StrokeLineJoin="Round" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            <Image x:Name="HomeMediaThumbImg" Stretch="UniformToFill" Visibility="Collapsed"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,6,0" Cursor="Hand" MouseLeftButtonUp="HomeMediaCard_Click" ToolTip="Нажмите, чтобы открыть полный микшер музыки и звука">
+                                                        <TextBlock x:Name="HomeMediaTitleText" Text="Ничего не играет" FontSize="12" FontWeight="SemiBold" Foreground="#F4F4F5" TextTrimming="CharacterEllipsis" MaxWidth="165"/>
+                                                        <TextBlock x:Name="HomeMediaArtistText" Text="Выберите или включите плеер" FontSize="10" Foreground="#8E9099" TextTrimming="CharacterEllipsis" MaxWidth="165"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Content="⏮" Style="{StaticResource DarkButton}" Background="Transparent" BorderThickness="0" Width="24" Height="24" Padding="0" FontSize="11" Foreground="#D4D4D8" Click="MediaPrev_Click"/>
+                                                        <Button x:Name="HomeMediaPlayBtn" Content="▶" Style="{StaticResource DarkButton}" Background="#252730" BorderBrush="#353744" Width="28" Height="28" Padding="0" FontSize="11" Foreground="#FFFFFF" Margin="2,0" Click="MediaPlayPause_Click"/>
+                                                        <Button Content="⏭" Style="{StaticResource DarkButton}" Background="Transparent" BorderThickness="0" Width="24" Height="24" Padding="0" FontSize="11" Foreground="#D4D4D8" Click="MediaNext_Click"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- Sleek Segmented Player Selector Track -->
+                                                <Border Background="#111216" CornerRadius="10" Padding="2" Margin="0,9,0,0" HorizontalAlignment="Left">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Button x:Name="HomePlayerAutoBtn" Content="Авто" Style="{StaticResource DarkButton}" BorderThickness="0" Padding="8,2.5" FontSize="9.5" Margin="0,0,2,0" Tag="Auto" Click="BindMediaPlayer_Click"/>
+                                                        <Button x:Name="HomePlayerSpotifyBtn" Content="Spotify" Style="{StaticResource DarkButton}" BorderThickness="0" Padding="8,2.5" FontSize="9.5" Margin="0,0,2,0" Tag="Spotify" Click="BindMediaPlayer_Click" ToolTip="Выбрать Spotify (повторный клик — открыть)"/>
+                                                        <Button x:Name="HomePlayerSoundCloudBtn" Content="SoundCloud" Style="{StaticResource DarkButton}" BorderThickness="0" Padding="8,2.5" FontSize="9.5" Margin="0,0,2,0" Tag="SoundCloud" Click="BindMediaPlayer_Click" ToolTip="Выбрать SoundCloud (повторный клик — открыть)"/>
+                                                        <Button x:Name="HomePlayerYtMusicBtn" Content="YT Music" Style="{StaticResource DarkButton}" BorderThickness="0" Padding="8,2.5" FontSize="9.5" Tag="YouTubeMusic" Click="BindMediaPlayer_Click" ToolTip="Выбрать YouTube Music (повторный клик — открыть)"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Weather Card (Bright colored SVG weather graphics, zero black glyphs) -->
+                                        <Border Grid.Column="2" Background="#18191F" BorderBrush="#252730" BorderThickness="1" CornerRadius="18" Padding="14,11" Cursor="Hand" MouseLeftButtonUp="HomeWeatherCard_Click" ToolTip="Нажмите чтобы обновить погоду (город задаётся в настройках ⚙)">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Grid x:Name="HomeWeatherIconCanvas" Width="36" Height="36" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                    <Ellipse x:Name="HomeSunRayRing" Width="28" Height="28" Stroke="#FBBF24" StrokeThickness="1.6" StrokeDashArray="2 2.2" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+                                                    <Ellipse x:Name="HomeSunCore" Width="17" Height="17" Fill="#FBBF24" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5.5,5.5,0,0"/>
+                                                    <Path x:Name="HomeCloudShape" Data="M 4,15 H 18 A 3.5,3.5 0 0 0 18,8 A 4.8,4.8 0 0 0 8.5,7 A 3.8,3.8 0 0 0 4,15 Z" Fill="#E4E4E7" Width="23" Height="15" Stretch="Uniform" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,1,3"/>
+                                                    <Path x:Name="HomeRainShape" Data="M 6,16 L 4.5,19 M 11,16 L 9.5,19 M 16,16 L 14.5,19" Stroke="#38BDF8" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,4,0" Visibility="Collapsed"/>
+                                                </Grid>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock x:Name="HomeWeatherTempText" Text="—°" FontSize="20" FontWeight="SemiBold" Foreground="#F4F4F5" LineHeight="22"/>
+                                                    <TextBlock x:Name="HomeWeatherSubText" Text="Погода" FontSize="10.2" Foreground="#9CA3AF" MaxWidth="98" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Row 4: macOS-Style Unboxed Pure Icon Dock + Expandable Live Windows App Search ("+" like Screenshot 7) -->
+                                    <Border x:Name="HomeDockContainer" Background="#18191F" BorderBrush="#252730" BorderThickness="1" CornerRadius="20" Padding="14,10">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ScrollViewer x:Name="HomeDockScrollViewer" Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                                    <StackPanel x:Name="HomeDockAppsPanel" Orientation="Horizontal" VerticalAlignment="Center"/>
+                                                </ScrollViewer>
+                                                <StackPanel x:Name="HomeGridContainer" Grid.Column="0" Visibility="Collapsed">
+                                                    <WrapPanel x:Name="AppsWrapPanel" Orientation="Horizontal" MaxWidth="462" HorizontalAlignment="Left"/>
+                                                </StackPanel>
+                                                <Button x:Name="HomeAppsModeToggleBtn" Grid.Column="1" Style="{StaticResource DarkButton}" Background="Transparent" BorderThickness="0" Width="26" Height="26" Padding="0" Opacity="0.55" VerticalAlignment="Center" Margin="6,0,0,4" Click="HomeAppsModeToggleBtn_Click" ToolTip="Переключить вид: Док / Сетка">
+                                                    <Path x:Name="HomeAppsModeIcon" Data="M 4,4 H 10 V 10 H 4 Z M 14,4 H 20 V 10 H 14 Z M 4,14 H 10 V 20 H 4 Z M 14,14 H 20 V 20 H 14 Z" Stroke="#A1A1AA" StrokeThickness="1.6" StrokeLineJoin="Round" Width="13" Height="13" Stretch="Uniform"/>
+                                                </Button>
+                                            </Grid>
+
+                                            <!-- Inline App Search Drawer (toggled cleanly by clicking "+") -->
+                                            <StackPanel x:Name="HomeAppSearchDrawer" Visibility="Collapsed" Margin="0,10,0,0">
+                                                <Grid>
+                                                    <TextBox x:Name="HomeAppSearchBox" Background="#1E2028" Foreground="#F4F4F5" BorderBrush="#2563EB" BorderThickness="1.8" Padding="32,7,84,7" FontSize="12" CaretBrush="#60A5FA" TextChanged="HomeAppSearchBox_TextChanged" KeyDown="HomeAppSearchBox_KeyDown">
+                                                        <TextBox.Template>
+                                                            <ControlTemplate TargetType="TextBox">
+                                                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                                                                    <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"/>
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </TextBox.Template>
+                                                    </TextBox>
+                                                    <Path Data="M 10,4 A 6,6 0 1 0 10,16 A 6,6 0 1 0 10,4 Z M 14.5,14.5 L 19,19" Stroke="#71717A" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="11,0,0,0" IsHitTestVisible="False"/>
+                                                    <TextBlock x:Name="HomeAppSearchPlaceholder" Text="Поиск программ (Камера, Калькулятор, cmd...)" FontSize="11.2" Foreground="#71717A" Margin="33,0,90,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                                    <Button Content="Обзор .exe" Style="{StaticResource DarkButton}" Background="#272A35" BorderThickness="0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0" Padding="8,3.5" FontSize="9.8" Click="BrowseCustomExeApp_Click" ToolTip="Выбрать любую программу с диска"/>
+                                                </Grid>
+                                                <ItemsControl x:Name="HomeAppSearchResultsList" Margin="0,9,0,0">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <UniformGrid Columns="3"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
                                     <TextBlock x:Name="AppsEditHintText"
-                                               Text="Режим правки: перетаскивайте иконки мышкой для смены порядка"
-                                               FontSize="10.5"
-                                               Foreground="#64748B"
-                                               Margin="4,4,0,0"
+                                               Text="Режим правки: перетаскивайте приложения или жмите красный кружок −"
+                                               FontSize="10"
+                                               Foreground="#71717A"
+                                               Margin="4,5,0,0"
                                                Visibility="Collapsed"/>
                                 </StackPanel>
 
-                                <!-- 2. REMOTE CONTROL TAB ("Пульт": Медиа + Звук/Микшер + Яркость + Стрим-щит + Ночной стоп + BT) -->
+                                <!-- 2. MUSIC & AUDIO STUDIO TAB ("Музыка": Apple/Atoll Hero Player + Waveform + Seekbar + Audio Mixer) -->
                                 <StackPanel x:Name="RemotePanel" Visibility="Collapsed">
-                                    <!-- Now Playing Card -->
-                                    <Border Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="10,8" Margin="0,0,0,7">
+                                    <!-- HERO NOW PLAYING CARD -->
+                                    <Border x:Name="MediaHeroCard" BorderBrush="#262830" BorderThickness="1" CornerRadius="18" Padding="16,14" Margin="0,0,0,10">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop x:Name="MediaHeroGlowStop" Color="#2038BDF8" Offset="0"/>
+                                                <GradientStop Color="#15161B" Offset="0.55"/>
+                                                <GradientStop Color="#121317" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
                                         <StackPanel>
+                                            <!-- Top Album Art + Metadata + Live Spectrum Waveform -->
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Large 76x76 Rounded Album Cover -->
+                                                <Border x:Name="MediaCardThumbBorder" Grid.Column="0" Width="76" Height="76" CornerRadius="14" Background="#1D1F27" BorderBrush="#2C2F3A" BorderThickness="1" Margin="0,0,13,0" ClipToBounds="True" VerticalAlignment="Center">
+                                                    <Grid>
+                                                        <Path x:Name="MediaCardFallbackIcon" Data="M 10,17 V 6 L 20,4 V 15 M 7.5,17 A 2.5,2.5 0 1 1 7.5,16.9 M 17.5,15 A 2.5,2.5 0 1 1 17.5,14.9" Stroke="#71717A" StrokeThickness="1.7" StrokeLineJoin="Round" Width="28" Height="28" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        <Image x:Name="MediaCardThumbImg" Stretch="UniformToFill" Visibility="Collapsed"/>
+                                                    </Grid>
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <!-- Source Pill + Animated 6-Bar Visualizer -->
+                                                    <Grid Margin="0,0,0,5">
+                                                        <Border x:Name="MediaSourcePill" Background="#20222B" CornerRadius="8" Padding="7,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Ellipse x:Name="MediaSourceDot" Width="5.5" Height="5.5" Fill="{DynamicResource AccentBrightBrush}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                                <TextBlock x:Name="MediaSourceBadge" Text="Медиаплеер" FontSize="9.5" FontWeight="SemiBold" Foreground="#D4D4D8"/>
+                                                            </StackPanel>
+                                                        </Border>
+
+                                                        <StackPanel x:Name="RemoteEqPanel" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Height="16" Opacity="0.85">
+                                                            <Border x:Name="RemoteEqBar1" Width="2.5" Height="5" CornerRadius="1.2" Background="#38BDF8" VerticalAlignment="Center" Margin="0,0,2,0"/>
+                                                            <Border x:Name="RemoteEqBar2" Width="2.5" Height="10" CornerRadius="1.2" Background="#60A5FA" VerticalAlignment="Center" Margin="0,0,2,0"/>
+                                                            <Border x:Name="RemoteEqBar3" Width="2.5" Height="14" CornerRadius="1.2" Background="#818CF8" VerticalAlignment="Center" Margin="0,0,2,0"/>
+                                                            <Border x:Name="RemoteEqBar4" Width="2.5" Height="9" CornerRadius="1.2" Background="#A78BFA" VerticalAlignment="Center" Margin="0,0,2,0"/>
+                                                            <Border x:Name="RemoteEqBar5" Width="2.5" Height="12" CornerRadius="1.2" Background="#C084FC" VerticalAlignment="Center" Margin="0,0,2,0"/>
+                                                            <Border x:Name="RemoteEqBar6" Width="2.5" Height="6" CornerRadius="1.2" Background="#E879F9" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Grid>
+
+                                                    <!-- Track Title & Artist -->
+                                                    <TextBlock x:Name="MediaTitleText" Text="Ничего не играет" FontSize="15" FontWeight="SemiBold" Foreground="#F4F4F5" TextTrimming="CharacterEllipsis" MaxWidth="400"/>
+                                                    <TextBlock x:Name="MediaArtistText" Text="Выберите плеер или запустите трек" FontSize="11.5" Foreground="#A1A1AA" TextTrimming="CharacterEllipsis" MaxWidth="400" Margin="0,2,0,0"/>
+
+                                                    <!-- Clickable Seek Bar + Timestamps -->
+                                                    <Grid Margin="0,9,0,0">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <Border x:Name="MediaProgressHost" Grid.Row="0" Height="6" CornerRadius="3" Background="#252732" Cursor="Hand" ToolTip="Нажмите для перемотки трека" MouseLeftButtonDown="MediaProgressHost_MouseDown">
+                                                            <Border x:Name="MediaProgressFill" Height="6" CornerRadius="3" Width="0" HorizontalAlignment="Left" Background="#F4F4F5"/>
+                                                        </Border>
+                                                        <Grid Grid.Row="1" Margin="0,4,0,0">
+                                                            <TextBlock x:Name="MediaElapsedText" Text="0:00" FontSize="9.5" Foreground="#71717A" HorizontalAlignment="Left"/>
+                                                            <TextBlock x:Name="MediaDurationText" Text="0:00" FontSize="9.5" Foreground="#71717A" HorizontalAlignment="Right"/>
+                                                        </Grid>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <!-- Bottom Transport & Source Selector Bar -->
+                                            <Grid Margin="0,10,0,0">
+                                                <!-- Player Selector Pills -->
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                                    <Button x:Name="PlayerAutoBtn" Content="Авто" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10" Margin="0,0,4,0" Tag="Auto" Click="BindMediaPlayer_Click"/>
+                                                    <Button x:Name="PlayerSpotifyBtn" Content="Spotify" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10" Margin="0,0,4,0" Tag="Spotify" Click="BindMediaPlayer_Click" ToolTip="Spotify (повторный клик — открыть)"/>
+                                                    <Button x:Name="PlayerSoundCloudBtn" Content="SoundCloud" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10" Margin="0,0,4,0" Tag="SoundCloud" Click="BindMediaPlayer_Click" ToolTip="SoundCloud (повторный клик — открыть)"/>
+                                                    <Button x:Name="PlayerYtMusicBtn" Content="YT Music" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10" Margin="0,0,4,0" Tag="YouTubeMusic" Click="BindMediaPlayer_Click" ToolTip="YouTube Music (повторный клик — открыть)"/>
+                                                    <Button x:Name="LaunchBoundPlayerBtn" Content="↗" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10.5" Click="LaunchBoundPlayer_Click" ToolTip="Открыть выбранный музыкальный сервис"/>
+                                                </StackPanel>
+
+                                                <!-- Apple/Atoll Transport Buttons -->
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                    <Button Style="{StaticResource DarkButton}" Background="Transparent" BorderThickness="0" Width="32" Height="32" Padding="0" Margin="0,0,6,0" Click="MediaPrev_Click" ToolTip="Предыдущий трек">
+                                                        <Path Data="M 5,5 V 15 M 16,5 L 8,10 L 16,15 Z" Stroke="#E4E4E7" Fill="#E4E4E7" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="15" Height="15" Stretch="Uniform"/>
+                                                    </Button>
+                                                    <Button x:Name="MediaPlayPauseBtn" Width="38" Height="38" Padding="0" Margin="0,0,6,0" Cursor="Hand" Click="MediaPlayPause_Click" ToolTip="Воспроизведение / Пауза">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="Bd" CornerRadius="19" Background="#F4F4F5">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="Bd" Property="Background" Value="#FFFFFF"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                        <Grid>
+                                                            <Path x:Name="MediaPlayGlyph" Data="M 7,4 L 18,10 L 7,16 Z" Fill="#090A0D" Width="13" Height="13" Stretch="Uniform" Margin="2,0,0,0"/>
+                                                            <Path x:Name="MediaPauseGlyph" Data="M 6,4 H 9 V 16 H 6 Z M 12,4 H 15 V 16 H 12 Z" Fill="#090A0D" Width="12" Height="12" Stretch="Uniform" Visibility="Collapsed"/>
+                                                        </Grid>
+                                                    </Button>
+                                                    <Button Style="{StaticResource DarkButton}" Background="Transparent" BorderThickness="0" Width="32" Height="32" Padding="0" Click="MediaNext_Click" ToolTip="Следующий трек">
+                                                        <Path Data="M 15,5 V 15 M 4,5 L 12,10 L 4,15 Z" Stroke="#E4E4E7" Fill="#E4E4E7" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="15" Height="15" Stretch="Uniform"/>
+                                                    </Button>
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- AUDIO OUTPUT, VOLUME & PER-APP MIXER -->
+                                    <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="14,12" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,7">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Path Data="M 3,9 H 7 L 12,5 V 19 L 7,15 H 3 Z M 15.5,8.5 A 5,5 0 0 1 15.5,15.5" Stroke="#A1A1AA" StrokeThickness="1.7" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="15" Height="15" Stretch="Uniform" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="VolumePercentText" Text="Громкость · —%" FontSize="11.5" FontWeight="SemiBold" Foreground="#F4F4F5" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                    <Button x:Name="GameAudioBindBtn" Content="🎮 Автозвук" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="8,3" FontSize="10" Margin="0,0,4,0" Click="BindGameAudioDevice_Click" Visibility="Collapsed" ToolTip="Закрепить аудио-устройство за игрой"/>
+                                                    <Button x:Name="AudioSwitchBtn" Content="🎧 Вывод" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="9,3.5" FontSize="10" Margin="0,0,4,0" Click="SwitchAudioOutput_Click" ToolTip="Переключить устройство вывода"/>
+                                                    <Button x:Name="ToggleAppMixerBtn" Content="Микшер ▾" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="9,3.5" FontSize="10" Click="ToggleAppMixer_Click" ToolTip="Громкость по программам"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Slider x:Name="MasterVolumeSlider" Minimum="0" Maximum="100" ValueChanged="MasterVolumeSlider_ValueChanged" IsMoveToPointEnabled="True"/>
+                                            <ItemsControl x:Name="AppMixerList" Visibility="Collapsed" Margin="0,8,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,3">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="105"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding ProcessName}" FontSize="10.5" Foreground="#D4D4D8" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                            <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding VolumePercent, Mode=TwoWay}" Tag="{Binding Pid}" ValueChanged="AppSessionSlider_ValueChanged" IsMoveToPointEnabled="True" VerticalAlignment="Center" Margin="6,0"/>
+                                                            <Button Grid.Column="2" Content="{Binding MuteGlyph}" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="6,2" FontSize="10" Tag="{Binding Pid}" Click="AppSessionMute_Click"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- QUICK AUDIO & DISPLAY ROW -->
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="10"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="6"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="MicMuteBtn" Grid.Column="0" Content="🎙 Мик: Вкл" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="6,5" FontSize="10.2" Click="ToggleMicMute_Click"/>
+                                                <Button x:Name="StreamShieldBtn" Grid.Column="2" Content="🛡 Щит: Выкл" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="6,5" FontSize="10" Click="ToggleStreamShield_Click" ToolTip="Скрывать треки и превью при записи"/>
+                                            </Grid>
+                                        </Border>
+
+                                        <Border Grid.Column="2" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <Border x:Name="MediaCardThumbBorder" Grid.Column="0" Width="32" Height="32" CornerRadius="7" Background="#1D2030" Margin="0,0,9,0" ClipToBounds="True" Visibility="Collapsed" VerticalAlignment="Center">
-                                                    <Image x:Name="MediaCardThumbImg" Stretch="UniformToFill"/>
-                                                </Border>
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
-                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
-                                                        <TextBlock Text="🎵" FontSize="11" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                                        <TextBlock x:Name="MediaTitleText" Text="Ничего не воспроизводится" FontSize="12" FontWeight="SemiBold" Foreground="#F8FAFC" TextTrimming="CharacterEllipsis" MaxWidth="175"/>
-                                                        <TextBlock x:Name="MediaSourceBadge" Text="" FontSize="9.5" Foreground="{DynamicResource AccentBrightBrush}" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
-                                                    </StackPanel>
-                                                    <TextBlock x:Name="MediaArtistText" Text="Включите музыку в Spotify, SoundCloud или браузере" FontSize="10.5" Foreground="#94A3B8" TextTrimming="CharacterEllipsis" MaxWidth="210"/>
-                                                </StackPanel>
-
-                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Button Content="⏮" Style="{StaticResource DarkButton}" Width="28" Height="28" Padding="0" Margin="0,0,4,0" Click="MediaPrev_Click" ToolTip="Предыдущий трек"/>
-                                                    <Button x:Name="MediaPlayPauseBtn" Content="⏯" Style="{StaticResource AccentButton}" Width="32" Height="28" Padding="0" Margin="0,0,4,0" Click="MediaPlayPause_Click" ToolTip="Воспроизведение / Пауза"/>
-                                                    <Button Content="⏭" Style="{StaticResource DarkButton}" Width="28" Height="28" Padding="0" Click="MediaNext_Click" ToolTip="Следующий трек"/>
-                                                </StackPanel>
+                                                <TextBlock x:Name="BrightnessLabelText" Grid.Column="0" Text="☀ 80%" FontSize="10.5" Foreground="#D4D4D8" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <Slider x:Name="BrightnessSlider" Grid.Column="1" Minimum="0" Maximum="100" Value="80" VerticalAlignment="Center" IsMoveToPointEnabled="True" ValueChanged="BrightnessSlider_ValueChanged"/>
+                                                <Button Grid.Column="2" Content="Ночь" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="7,3" FontSize="9.8" Margin="8,0,0,0" Click="NightLightBtn_Click" ToolTip="Ночной свет Windows"/>
                                             </Grid>
-
-                                            <!-- Timeline Progress -->
-                                            <Border x:Name="MediaProgressHost" Height="2.5" CornerRadius="1.2" Background="#232638" Margin="0,6,0,0" Visibility="Collapsed">
-                                                <Border x:Name="MediaProgressFill" Height="2.5" CornerRadius="1.2" Width="0" HorizontalAlignment="Left" Background="{DynamicResource AccentBrightBrush}"/>
-                                            </Border>
-
-                                            <!-- Player Binding Pills -->
-                                            <Grid Margin="0,6,0,0">
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <TextBlock Text="Плеер:" FontSize="10" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                                    <Button x:Name="PlayerAutoBtn" Content="Авто" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="10" Margin="0,0,4,0" Tag="Auto" Click="BindMediaPlayer_Click"/>
-                                                    <Button x:Name="PlayerSpotifyBtn" Content="Spotify" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="10" Margin="0,0,4,0" Tag="Spotify" Click="BindMediaPlayer_Click" ToolTip="Привязать Spotify (повторный клик запустит)"/>
-                                                    <Button x:Name="PlayerSoundCloudBtn" Content="SoundCloud" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="10" Tag="SoundCloud" Click="BindMediaPlayer_Click" ToolTip="Привязать SoundCloud / музыку из браузера"/>
-                                                </StackPanel>
-                                                <Button x:Name="LaunchBoundPlayerBtn" Content="↗ Открыть" HorizontalAlignment="Right" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="9.8" Click="LaunchBoundPlayer_Click" ToolTip="Открыть выбранный музыкальный сервис"/>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <!-- Audio Output, Volume, Per-App Mixer & Privacy Row -->
-                                    <Grid Margin="0,0,0,7">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="7"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-
-                                        <Border Grid.Column="0" Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="10,7">
-                                            <StackPanel>
-                                                <Grid Margin="0,0,0,5">
-                                                    <TextBlock x:Name="VolumePercentText" Text="🔊 Громкость: —%" FontSize="11" Foreground="#E2E8F0" VerticalAlignment="Center"/>
-                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                        <Button x:Name="ToggleAppMixerBtn" Content="🎚" Style="{StaticResource DarkButton}" Padding="6,2" FontSize="10.5" Margin="0,0,4,0" Click="ToggleAppMixer_Click" ToolTip="Мини-микшер громкости по программам"/>
-                                                        <Button x:Name="GameAudioBindBtn" Content="🎮" Style="{StaticResource DarkButton}" Padding="6,2" FontSize="10.5" Margin="0,0,4,0" Click="BindGameAudioDevice_Click" Visibility="Collapsed" ToolTip="Закрепить это аудио-устройство за текущей игрой (автопереключение)"/>
-                                                        <Button x:Name="AudioSwitchBtn" Content="🎧 Вывод" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="10.5" Click="SwitchAudioOutput_Click" ToolTip="Переключить устройство вывода"/>
-                                                    </StackPanel>
-                                                </Grid>
-                                                <Slider x:Name="MasterVolumeSlider" Minimum="0" Maximum="100" ValueChanged="MasterVolumeSlider_ValueChanged" IsMoveToPointEnabled="True"/>
-                                                <ItemsControl x:Name="AppMixerList" Visibility="Collapsed" Margin="0,6,0,0">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Grid Margin="0,2.5">
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="82"/>
-                                                                    <ColumnDefinition Width="*"/>
-                                                                    <ColumnDefinition Width="Auto"/>
-                                                                </Grid.ColumnDefinitions>
-                                                                <TextBlock Grid.Column="0" Text="{Binding ProcessName}" FontSize="10" Foreground="#CBD5E1" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                                                <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding VolumePercent, Mode=TwoWay}" Tag="{Binding Pid}" ValueChanged="AppSessionSlider_ValueChanged" IsMoveToPointEnabled="True" VerticalAlignment="Center" Margin="4,0"/>
-                                                                <Button Grid.Column="2" Content="{Binding MuteGlyph}" Style="{StaticResource DarkButton}" Padding="4,1" FontSize="10" Tag="{Binding Pid}" Click="AppSessionMute_Click"/>
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                        </Border>
-
-                                        <Border Grid.Column="2" Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="9,7" Width="140">
-                                            <StackPanel VerticalAlignment="Center">
-                                                <Button x:Name="MicMuteBtn" Content="🎙 Микрофон: Вкл" Style="{StaticResource DarkButton}" Padding="6,4" FontSize="10.5" Margin="0,0,0,4" Click="ToggleMicMute_Click"/>
-                                                <Button x:Name="StreamShieldBtn" Content="🛡 Стрим-щит: Выкл" Style="{StaticResource DarkButton}" Padding="6,3" FontSize="10" Click="ToggleStreamShield_Click" ToolTip="Скрыть названия треков и личные превью во время записи/стрима"/>
-                                                <TextBlock x:Name="PrivacyStatusText" Text="🔒 Камера и мик свободны" FontSize="9.5" Foreground="#64748B" Margin="2,4,0,0" TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
                                         </Border>
                                     </Grid>
 
-                                    <!-- Monitor Brightness & Night Light -->
-                                    <Border Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="10,6" Margin="0,0,0,7">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock x:Name="BrightnessLabelText" Grid.Column="0" Text="☀ Яркость" FontSize="10.5" Foreground="#CBD5E1" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <Slider x:Name="BrightnessSlider" Grid.Column="1" Minimum="0" Maximum="100" Value="80" VerticalAlignment="Center" IsMoveToPointEnabled="True" ValueChanged="BrightnessSlider_ValueChanged"/>
-                                            <Button Grid.Column="2" Content="🌙 Ночь" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="10" Margin="8,0,0,0" Click="NightLightBtn_Click" ToolTip="Открыть параметры Ночного света Windows"/>
-                                        </Grid>
-                                    </Border>
+                                    <!-- COLLAPSIBLE SLEEP TIMER, POWER & RECORDINGS -->
+                                    <Button x:Name="RemoteExtrasToggleBtn" Content="Таймер сна, питание и записи ▾" Style="{StaticResource DarkButton}" Background="#15161A" BorderBrush="#24252C" HorizontalAlignment="Stretch" Padding="10,7" FontSize="10.5" Foreground="#A1A1AA" Click="RemoteExtrasToggle_Click"/>
 
-                                    <!-- Bluetooth Control & Devices -->
-                                    <Border Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="10,7" Margin="0,0,0,7">
-                                        <StackPanel>
-                                            <Grid Margin="0,0,0,5">
+                                    <StackPanel x:Name="RemoteExtrasSection" Visibility="Collapsed" Margin="0,8,0,0">
+                                        <!-- Night Auto-Sleep / Shutdown Timer -->
+                                        <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="12" Padding="11,8" Margin="0,0,0,7">
+                                            <Grid>
                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <TextBlock Text="Bluetooth" FontSize="11.5" FontWeight="SemiBold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
-                                                    <TextBlock x:Name="BtStateText" Text="· проверка..." FontSize="10.5" Foreground="#94A3B8" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="🌙 Авто-стоп ПК:" FontSize="11" FontWeight="SemiBold" Foreground="#E4E4E7" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="TimerStatusText" Text="Выкл." FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentBrightBrush}" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                    <Button x:Name="BtExpandBtn" Content="Все ▾" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" ToolTip="Показать / скрыть все устройства" Click="BtExpandBtn_Click"/>
-                                                    <Button x:Name="BtToggleBtn" Content="Вкл / Выкл" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10.5" Margin="0,0,4,0" Click="ToggleBluetooth_Click"/>
-                                                    <Button Content="⚙" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10.5" ToolTip="Параметры Bluetooth" Click="OpenBtSettings_Click"/>
+                                                    <Button x:Name="TimerActionModeBtn" Content="💤 Сон" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Click="TimerActionMode_Click"/>
+                                                    <Button Content="30м" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Tag="30" Click="StartTimerPreset_Click"/>
+                                                    <Button Content="60м" Style="{StaticResource AccentButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Tag="60" Click="StartTimerPreset_Click"/>
+                                                    <Button Content="120м" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Tag="120" Click="StartTimerPreset_Click"/>
+                                                    <Button Content="Стоп" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Click="StopTimer_Click"/>
                                                 </StackPanel>
                                             </Grid>
+                                        </Border>
 
-                                            <ItemsControl x:Name="BtDevicesList">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border Background="#1D1F2C" CornerRadius="8" Padding="8,4.5" Margin="0,0,0,4">
-                                                            <Grid>
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="*"/>
-                                                                    <ColumnDefinition Width="Auto"/>
-                                                                </Grid.ColumnDefinitions>
-                                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                                    <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="Medium" Foreground="#F1F5F9" TextTrimming="CharacterEllipsis"/>
-                                                                    <TextBlock Text="{Binding StatusLabel}" FontSize="9.8" Foreground="#94A3B8"/>
-                                                                </StackPanel>
-                                                                <Button Grid.Column="1" Content="{Binding ActionLabel}" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10" Tag="{Binding}" Click="BtDeviceAction_Click"/>
-                                                            </Grid>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                            <TextBlock x:Name="BtEmptyText" Text="Сопряжённые Bluetooth-устройства не найдены" FontSize="10" Foreground="#64748B" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,2"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <!-- Night Auto-Sleep / Shutdown Timer inside Пульт -->
-                                    <Border Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="10,7" Margin="0,0,0,7">
-                                        <Grid>
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="🌙 Авто-стоп ПК:" FontSize="11" FontWeight="SemiBold" Foreground="#E2E8F0" VerticalAlignment="Center"/>
-                                                <TextBlock x:Name="TimerStatusText" Text="Выкл." FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentBrightBrush}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                        <!-- Screen Recording + Power Mode & Folders -->
+                                        <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="12" Padding="11,8">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,5">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button x:Name="ScreenRecordBtn" Content="🔴 Запись экрана" Style="{StaticResource DarkButton}" Padding="9,4" FontSize="10.8" FontWeight="SemiBold" Margin="0,0,5,0" Click="ToggleScreenRecord_Click"/>
+                                                        <Button x:Name="RecordMonitorBtn" Content="🖥 Экран 1" Style="{StaticResource DarkButton}" Padding="8,4" FontSize="10.2" Visibility="Collapsed" Click="CycleRecordMonitor_Click"/>
+                                                        <Button x:Name="PowerModeBtn" Style="{StaticResource DarkButton}" Padding="8,4" FontSize="10.2" Margin="5,0,0,0" Click="TogglePowerMode_Click">
+                                                            <TextBlock x:Name="PowerModeLabelText" Text="⚡ Питание"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                        <Button Content="📁 Видео" Style="{StaticResource DarkButton}" Padding="7,4" FontSize="10" Margin="0,0,4,0" Click="OpenRecordingsFolder_Click"/>
+                                                        <Button Content="📁 Клипы" Style="{StaticResource DarkButton}" Padding="7,4" FontSize="10" Click="OpenReplayClipsFolder_Click"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock x:Name="RecordSaveHintText" Text="Запись → Видео\DesktopIsland · 30с клип → Видео\Captures" FontSize="9.3" Foreground="#71717A" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <Button x:Name="TimerActionModeBtn" Content="💤 Сон" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Click="TimerActionMode_Click" ToolTip="Действие после отсчёта: Сон ПК или Выключение"/>
-                                                <Button Content="30м" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Tag="30" Click="StartTimerPreset_Click"/>
-                                                <Button Content="60м" Style="{StaticResource AccentButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Tag="60" Click="StartTimerPreset_Click"/>
-                                                <Button Content="120м" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Tag="120" Click="StartTimerPreset_Click"/>
-                                                <Button Content="Стоп" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Click="StopTimer_Click"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-
-                                    <!-- Screen Recording + Monitor Picker + Clear Save Paths -->
-                                    <Border Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="10,7" Margin="0,0,0,7">
-                                        <StackPanel>
-                                            <Grid Margin="0,0,0,4">
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Button x:Name="ScreenRecordBtn" Content="🔴 Запись экрана" Style="{StaticResource DarkButton}" Padding="9,4" FontSize="10.8" FontWeight="SemiBold" Margin="0,0,5,0" Click="ToggleScreenRecord_Click" ToolTip="Записать выбранный экран в MP4 (Видео\DesktopIsland)"/>
-                                                    <Button x:Name="RecordMonitorBtn" Content="🖥 Экран 1" Style="{StaticResource DarkButton}" Padding="8,4" FontSize="10.2" Visibility="Collapsed" Click="CycleRecordMonitor_Click" ToolTip="Выбрать монитор для записи экрана"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                    <Button Content="📁 Видео" Style="{StaticResource DarkButton}" Padding="7,4" FontSize="10" Margin="0,0,4,0" Click="OpenRecordingsFolder_Click" ToolTip="Открыть папку записей экрана (Видео\DesktopIsland)"/>
-                                                    <Button Content="📁 Клипы" Style="{StaticResource DarkButton}" Padding="7,4" FontSize="10" Click="OpenReplayClipsFolder_Click" ToolTip="Открыть папку 30с игровых клипов (ShadowPlay / Xbox Game Bar)"/>
-                                                </StackPanel>
-                                            </Grid>
-                                            <TextBlock x:Name="RecordSaveHintText" Text="Запись → Видео\DesktopIsland · 30с клип → Видео\Captures" FontSize="9.3" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <!-- Quick Actions Grid inside Пульт -->
-                                    <StackPanel>
-                                        <UniformGrid Columns="3" Margin="0,0,0,5">
-                                            <Button x:Name="DndToggleBtn" Style="{StaticResource DarkButton}" Margin="0,0,5,0" Padding="6,7" Click="ToggleDnd_Click" ToolTip="Режим «Не беспокоить»: отключает всплывающие уведомления Windows">
-                                                <StackPanel HorizontalAlignment="Center">
-                                                    <TextBlock x:Name="DndIconText" Text="🔕" FontSize="13" HorizontalAlignment="Center"/>
-                                                    <TextBlock x:Name="DndLabelText" Text="Не беспокоить" FontSize="10" Margin="0,2,0,0" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Button>
-                                            <Button x:Name="PowerModeBtn" Style="{StaticResource DarkButton}" Margin="0,0,5,0" Padding="6,7" Click="TogglePowerMode_Click" ToolTip="Переключить схему питания Windows: Баланс ↔ Макс. производительность">
-                                                <StackPanel HorizontalAlignment="Center">
-                                                    <TextBlock Text="⚡" FontSize="13" HorizontalAlignment="Center"/>
-                                                    <TextBlock x:Name="PowerModeLabelText" Text="Питание" FontSize="10" Margin="0,2,0,0" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Style="{StaticResource DarkButton}" Margin="0" Padding="6,7" Click="ToggleDesktopIcons_Click" ToolTip="Скрыть / показать иконки рабочего стола">
-                                                <StackPanel HorizontalAlignment="Center">
-                                                    <TextBlock Text="🙈" FontSize="13" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="Иконки стола" FontSize="10" Margin="0,2,0,0" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Button>
-                                        </UniformGrid>
-                                        <UniformGrid Columns="3">
-                                            <Button Style="{StaticResource DarkButton}" Margin="0,0,5,0" Padding="6,7" Click="ReplayClipBtn_Click" ToolTip="Сохранить последние 30с игры (ShadowPlay Alt+F10 → Видео\NVIDIA, или Game Bar Win+Alt+G → Видео\Captures)">
-                                                <StackPanel HorizontalAlignment="Center">
-                                                    <TextBlock Text="🎬" FontSize="13" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="Клип 30с" FontSize="10" Margin="0,2,0,0" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Style="{StaticResource DarkButton}" Margin="0,0,5,0" Padding="6,7" Click="LockPc_Click" ToolTip="Заблокировать ПК">
-                                                <StackPanel HorizontalAlignment="Center">
-                                                    <TextBlock Text="🔒" FontSize="13" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="Блокировка" FontSize="10" Margin="0,2,0,0" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Style="{StaticResource DarkButton}" Margin="0" Padding="6,7" Click="SleepPc_Click" ToolTip="Спящий режим">
-                                                <StackPanel HorizontalAlignment="Center">
-                                                    <TextBlock Text="🌙" FontSize="13" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="Сон ПК" FontSize="10" Margin="0,2,0,0" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Button>
-                                        </UniformGrid>
+                                        </Border>
                                     </StackPanel>
                                 </StackPanel>
 
                                 <!-- 2B. UTILITIES TAB ("Буфер": Калькулятор/Валюта + QR-код + Полка файлов + Буфер обмена) -->
                                 <StackPanel x:Name="UtilsPanel" Visibility="Collapsed">
                                     <!-- Quick Calculator / Currency Converter -->
-                                    <Border Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="9,7" Margin="0,0,0,7">
+                                    <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10" Margin="0,0,0,9">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -843,7 +1279,7 @@
                                     </Border>
 
                                     <!-- Instant QR Code Preview Card -->
-                                    <Border x:Name="QrCodeCard" Background="#161722" BorderBrush="{DynamicResource AccentBrightBrush}" BorderThickness="1" CornerRadius="12" Padding="10,8" Margin="0,0,0,7" Visibility="Collapsed">
+                                    <Border x:Name="QrCodeCard" Background="#15161A" BorderBrush="{DynamicResource AccentBrightBrush}" BorderThickness="1" CornerRadius="12" Padding="10,8" Margin="0,0,0,7" Visibility="Collapsed">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -862,7 +1298,7 @@
                                     </Border>
 
                                     <!-- Drag & Drop File Shelf -->
-                                    <Border Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="12" Padding="9,7" Margin="0,0,0,7">
+                                    <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10" Margin="0,0,0,9">
                                         <StackPanel>
                                             <Grid Margin="0,0,0,4">
                                                 <TextBlock Text="📎 Полка файлов (Drag &amp; Drop сюда или наружу)" FontSize="10.5" FontWeight="SemiBold" Foreground="#CBD5E1" VerticalAlignment="Center"/>
@@ -902,7 +1338,7 @@
                                     <ItemsControl x:Name="ClipboardHistoryList" MaxHeight="205">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Background="#161722" CornerRadius="8" Padding="8,5" Margin="0,0,0,3">
+                                                <Border Background="#15161A" CornerRadius="8" Padding="8,5" Margin="0,0,0,3">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*"/>
@@ -923,126 +1359,351 @@
                                     </ItemsControl>
                                 </StackPanel>
 
-                                <!-- 3. SYSTEM TAB (Полное раскрытие по заполненности без зажатого внутреннего скролла) -->
+                                <!-- 3. SYSTEM TAB (Atoll Control Center + 3 Live Graphs + Discord/DND + Mic/Battery + Details Drawer) -->
                                 <StackPanel x:Name="SystemPanel" Visibility="Collapsed">
-                                    <!-- Top Metrics Row -->
-                                    <Grid Margin="0,0,0,8">
+                                    <!-- ПУНКТ УПРАВЛЕНИЯ -->
+                                    <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10" Margin="0,0,0,9">
+                                        <StackPanel>
+                                            <TextBlock Text="ПУНКТ УПРАВЛЕНИЯ" FontSize="9.5" FontWeight="SemiBold" Foreground="#71717A" Margin="2,0,0,9"/>
+
+                                            <!-- 5 Circular Control Toggles -->
+                                            <UniformGrid Columns="5" Margin="0,0,0,10">
+                                                <Button x:Name="CtrlWifiBtn" Style="{StaticResource AtollUnboxedBtn}" Click="CtrlWifi_Click" ToolTip="Включить / выключить Wi-Fi (или открыть сеть)">
+                                                    <StackPanel HorizontalAlignment="Center">
+                                                        <Border x:Name="CtrlWifiCircle" Width="38" Height="38" CornerRadius="19" Background="#252730" Margin="0,0,0,5">
+                                                            <Viewbox Width="17" Height="17" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Data="M 2,9 A 15,15 0 0 1 22,9 M 5.5,13 A 10,10 0 0 1 18.5,13 M 9,16.5 A 5,5 0 0 1 15,16.5" Stroke="#F4F4F5" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                                                    <Ellipse Canvas.Left="10.7" Canvas.Top="19" Width="2.6" Height="2.6" Fill="#F4F4F5"/>
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </Border>
+                                                        <TextBlock x:Name="CtrlWifiLabel" Text="Wi-Fi" FontSize="10" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+
+                                                <Button x:Name="CtrlBtBtn" Style="{StaticResource AtollUnboxedBtn}" Click="ToggleBluetooth_Click" ToolTip="Включить / выключить Bluetooth">
+                                                    <StackPanel HorizontalAlignment="Center">
+                                                        <Border x:Name="CtrlBtCircle" Width="38" Height="38" CornerRadius="19" Background="#252730" Margin="0,0,0,5">
+                                                            <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Data="M 7,7 L 17,16.5 L 12,21 V 3 L 17,7.5 L 7,17" Stroke="#F4F4F5" StrokeThickness="2" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </Border>
+                                                        <TextBlock x:Name="CtrlBtLabel" Text="Bluetooth" FontSize="10" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+
+                                                <Button x:Name="CtrlAirplaneBtn" Style="{StaticResource AtollUnboxedBtn}" Click="CtrlAirplane_Click" ToolTip="Режим полёта Windows">
+                                                    <StackPanel HorizontalAlignment="Center">
+                                                        <Border x:Name="CtrlAirplaneCircle" Width="38" Height="38" CornerRadius="19" Background="#252730" Margin="0,0,0,5">
+                                                            <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Data="M 21,16 V 14 L 13,9 V 3.5 A 1.5,1.5 0 0 0 10,3.5 V 9 L 2,14 V 16 L 10,13.5 V 19 L 8,20.5 V 22 L 11.5,21 L 15,22 V 20.5 L 13,19 V 13.5 Z" Fill="#D4D4D8"/>
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </Border>
+                                                        <TextBlock x:Name="CtrlAirplaneLabel" Text="Полёт" FontSize="10" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+
+                                                <Button x:Name="CtrlVpnBtn" Style="{StaticResource AtollUnboxedBtn}" Click="CtrlVpn_Click" ToolTip="Быстрый статус и запуск VPN">
+                                                    <StackPanel HorizontalAlignment="Center">
+                                                        <Border x:Name="CtrlVpnCircle" Width="38" Height="38" CornerRadius="19" Background="#252730" Margin="0,0,0,5">
+                                                            <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Data="M 12,3 L 19,6 V 12 C 19,16.5 15.8,19.8 12,21 C 8.2,19.8 5,16.5 5,12 V 6 Z" Stroke="#F4F4F5" StrokeThickness="2" StrokeLineJoin="Round"/>
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </Border>
+                                                        <TextBlock x:Name="CtrlVpnLabel" Text="VPN" FontSize="10" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+
+                                                <Button x:Name="CtrlDesktopBtn" Style="{StaticResource AtollUnboxedBtn}" Click="CtrlDesktop_Click" ToolTip="Скрыть / показать иконки рабочего стола">
+                                                    <StackPanel HorizontalAlignment="Center">
+                                                        <Border x:Name="CtrlDesktopCircle" Width="38" Height="38" CornerRadius="19" Background="#252730" Margin="0,0,0,5">
+                                                            <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Data="M 2,12 C 5,6.5 9,4.5 12,4.5 C 15,4.5 19,6.5 22,12 C 19,17.5 15,19.5 12,19.5 C 9,19.5 5,17.5 2,12 Z M 3,3 L 21,21" Stroke="#D4D4D8" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </Border>
+                                                        <TextBlock Text="Чистый стол" FontSize="9.8" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </UniformGrid>
+
+                                            <!-- Action Pills Row (Lock / Sleep / Reboot / Shutdown / Clip / Record / RAM Boost) -->
+                                            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                <Button Content="🔒 Блок" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="9,4.5" FontSize="10" Margin="0,0,5,5" Click="LockPc_Click" ToolTip="Заблокировать ПК"/>
+                                                <Button Content="🌙 Сон" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="9,4.5" FontSize="10" Margin="0,0,5,5" Click="SleepPc_Click" ToolTip="Спящий режим"/>
+                                                <Button Content="↻ Перезагрузка" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="9,4.5" FontSize="10" Margin="0,0,5,5" Click="RebootPc_Click" ToolTip="Перезагрузить ПК"/>
+                                                <Button Content="⏻ Выкл" Style="{StaticResource DarkButton}" Background="#29171B" BorderBrush="#4C1D24" Foreground="#FCA5A5" Padding="9,4.5" FontSize="10" Margin="0,0,5,5" Click="ShutdownPc_Click" ToolTip="Выключить ПК"/>
+                                                <Button Content="🎬 Клип 30с" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="9,4.5" FontSize="10" Margin="0,0,5,5" Click="ReplayClipBtn_Click" ToolTip="Сохранить последние 30с"/>
+                                                <Button Content="🔴 Запись" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="9,4.5" FontSize="10" Margin="0,0,5,5" Click="ToggleScreenRecord_Click" ToolTip="Начать / остановить запись экрана"/>
+                                                <Button Content="⚡ Буст ОЗУ" Style="{StaticResource DarkButton}" Background="#1D261F" BorderBrush="#2D4A33" Foreground="#86EFAC" Padding="9,4.5" FontSize="10" Margin="0,0,0,5" Click="OptimizeRam_Click" ToolTip="Быстрая оптимизация ОЗУ"/>
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 3 Live Telemetry Sparkline Cards: CPU / GPU / RAM -->
+                                    <Grid Margin="0,0,0,9">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="6"/>
+                                            <ColumnDefinition Width="7"/>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="6"/>
+                                            <ColumnDefinition Width="7"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <Border Grid.Column="0" Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="10" Padding="9,7">
-                                            <Grid>
-                                                <Polyline x:Name="CpuSparkline" Stroke="#38BDF8" StrokeThickness="1.4" Opacity="0.35" VerticalAlignment="Bottom" HorizontalAlignment="Right" Height="20" Width="62"/>
-                                                <StackPanel>
-                                                    <TextBlock Text="CPU / GPU / FPS" FontSize="10" Foreground="#64748B"/>
-                                                    <TextBlock x:Name="CpuValText" Text="0%" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC"/>
-                                                    <TextBlock x:Name="FpsDetailText" Text="0 FPS" FontSize="10" Foreground="{DynamicResource AccentBrightBrush}" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock x:Name="GpuDetailText" Text="" FontSize="9.5" Foreground="#94A3B8" Margin="0,1,0,0" Visibility="Collapsed" TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                            </Grid>
+                                        <!-- CPU CARD -->
+                                        <Border Grid.Column="0" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="11,9">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,3">
+                                                    <TextBlock Text="ПРОЦЕССОР" FontSize="9.2" FontWeight="SemiBold" Foreground="#71717A" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="CpuValText" Text="0%" FontSize="14.5" FontWeight="Bold" Foreground="#F4F4F5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <TextBlock x:Name="FpsDetailText" Text="0 FPS" FontSize="9.8" Foreground="#8E9099" TextTrimming="CharacterEllipsis" Margin="0,0,0,6"/>
+                                                <Canvas Height="38" ClipToBounds="True" Margin="0,0,0,6">
+                                                    <Polygon x:Name="CpuSparkPolygon" Fill="#2838BDF8"/>
+                                                    <Polyline x:Name="CpuSparkline" Stroke="#38BDF8" StrokeThickness="1.8"/>
+                                                </Canvas>
+                                                <Border x:Name="CpuLoadBarHost" Height="3.5" CornerRadius="1.8" Background="#23242B">
+                                                    <Border x:Name="CpuLoadBarFill" Height="3.5" CornerRadius="1.8" Width="0" HorizontalAlignment="Left" Background="#38BDF8"/>
+                                                </Border>
+                                            </StackPanel>
                                         </Border>
 
-                                        <Border Grid.Column="2" Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="10" Padding="9,7">
-                                            <Grid>
-                                                <Polyline x:Name="RamSparkline" Stroke="#A78BFA" StrokeThickness="1.4" Opacity="0.35" VerticalAlignment="Bottom" HorizontalAlignment="Right" Height="20" Width="62"/>
-                                                <StackPanel>
-                                                    <TextBlock Text="ОЗУ (RAM)" FontSize="10" Foreground="#64748B"/>
-                                                    <TextBlock x:Name="RamValText" Text="0%" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC"/>
-                                                    <TextBlock x:Name="RamSubText" Text="0 / 0 ГБ" FontSize="10" Foreground="#94A3B8"/>
-                                                </StackPanel>
-                                                <Button Content="⚡" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource DarkButton}" Padding="5,2" FontSize="10.5" Click="OptimizeRam_Click" ToolTip="Оптимизировать ОЗУ"/>
-                                            </Grid>
+                                        <!-- GPU CARD -->
+                                        <Border Grid.Column="2" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="11,9">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,3">
+                                                    <TextBlock x:Name="SysGpuNameText" Text="ВИДЕОКАРТА" FontSize="9.2" FontWeight="SemiBold" Foreground="#71717A" MaxWidth="92" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="GpuCardValText" Text="—%" FontSize="14.5" FontWeight="Bold" Foreground="#F4F4F5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <TextBlock x:Name="GpuDetailText" Text="—" FontSize="9.8" Foreground="#8E9099" TextTrimming="CharacterEllipsis" Margin="0,0,0,6"/>
+                                                <Canvas Height="38" ClipToBounds="True" Margin="0,0,0,6">
+                                                    <Polygon x:Name="GpuSparkPolygon" Fill="#28C084FC"/>
+                                                    <Polyline x:Name="GpuSparkline" Stroke="#C084FC" StrokeThickness="1.8"/>
+                                                </Canvas>
+                                                <Border x:Name="GpuLoadBarHost" Height="3.5" CornerRadius="1.8" Background="#23242B">
+                                                    <Border x:Name="GpuLoadBarFill" Height="3.5" CornerRadius="1.8" Width="0" HorizontalAlignment="Left" Background="#C084FC"/>
+                                                </Border>
+                                            </StackPanel>
                                         </Border>
 
-                                        <Border Grid.Column="4" Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="10" Padding="9,7">
-                                            <Grid>
-                                                <Polyline x:Name="NetSparkline" Stroke="#34D399" StrokeThickness="1.4" Opacity="0.35" VerticalAlignment="Bottom" HorizontalAlignment="Right" Height="20" Width="62"/>
-                                                <StackPanel>
-                                                    <TextBlock x:Name="PingHeaderLabel" Text="Сеть · Ping" FontSize="10" Foreground="#64748B"/>
-                                                    <TextBlock x:Name="NetDownText" Text="↓ 0 КБ/с" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}" Margin="0,2,0,0"/>
-                                                    <TextBlock x:Name="NetUpText" Text="↑ 0 КБ/с" FontSize="10.5" Foreground="#94A3B8"/>
-                                                </StackPanel>
-                                            </Grid>
+                                        <!-- RAM CARD -->
+                                        <Border Grid.Column="4" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="11,9">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,3">
+                                                    <TextBlock Text="ПАМЯТЬ" FontSize="9.2" FontWeight="SemiBold" Foreground="#71717A" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="RamValText" Text="0%" FontSize="14.5" FontWeight="Bold" Foreground="#F4F4F5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <TextBlock x:Name="RamSubText" Text="0 / 0 ГБ" FontSize="9.8" Foreground="#8E9099" TextTrimming="CharacterEllipsis" Margin="0,0,0,6"/>
+                                                <Canvas Height="38" ClipToBounds="True" Margin="0,0,0,6">
+                                                    <Polygon x:Name="RamSparkPolygon" Fill="#2834D399"/>
+                                                    <Polyline x:Name="RamSparkline" Stroke="#34D399" StrokeThickness="1.8"/>
+                                                </Canvas>
+                                                <Border x:Name="RamLoadBarHost" Height="3.5" CornerRadius="1.8" Background="#23242B">
+                                                    <Border x:Name="RamLoadBarFill" Height="3.5" CornerRadius="1.8" Width="0" HorizontalAlignment="Left" Background="#34D399"/>
+                                                </Border>
+                                            </StackPanel>
                                         </Border>
                                     </Grid>
 
-                                    <!-- Top 3 Heavy Processes -->
-                                    <TextBlock Text="Топ-3 процесса по ОЗУ (быстрое завершение)" FontSize="10.5" Foreground="#64748B" Margin="2,0,0,4"/>
-                                    <ItemsControl x:Name="TopProcessesList" Margin="0,0,0,6">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Background="#161722" CornerRadius="8" Padding="8,4" Margin="0,0,0,3">
-                                                    <Grid>
-                                                        <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="Medium" Foreground="#E2E8F0" MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding MemoryFormatted}" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                            <Button Content="✕" Style="{StaticResource DarkButton}" Background="#3A1D24" Foreground="#FCA5A5" Padding="6,1" FontSize="10" Tag="{Binding}" Click="KillProcess_Click" ToolTip="Завершить процесс"/>
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                    <!-- Row 3: Discord & Sound + Do Not Disturb Timer -->
+                                    <Grid Margin="0,0,0,9">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
 
-                                    <!-- Local Drives -->
-                                    <TextBlock Text="Локальные диски" FontSize="10.5" Foreground="#64748B" Margin="2,2,0,4"/>
-                                    <ItemsControl x:Name="DrivesItemsControl" Margin="0,0,0,6">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Background="#161722" CornerRadius="8" Padding="9,6" Margin="0,0,0,4">
-                                                    <Grid>
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto"/>
-                                                            <RowDefinition Height="5"/>
-                                                        </Grid.RowDefinitions>
-                                                        <Grid Grid.Row="0" Margin="0,0,0,4">
-                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="11.5" Foreground="#F8FAFC"/>
-                                                                <TextBlock Text="{Binding Label}" FontSize="11" Foreground="#64748B" Margin="6,0,0,0"/>
-                                                            </StackPanel>
+                                        <Border Grid.Column="0" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10">
+                                            <Grid>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="Discord и звук" FontSize="12" FontWeight="SemiBold" Foreground="#F4F4F5"/>
+                                                    <TextBlock x:Name="DiscordStatusText" Text="Проверка..." FontSize="10.2" Foreground="#8E9099" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <Button Content="Микшер →" HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="8,4" FontSize="10" Click="JumpToAudioMixer_Click"/>
+                                            </Grid>
+                                        </Border>
+
+                                        <Border Grid.Column="2" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,9">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="НЕ БЕСПОКОИТЬ" FontSize="9.2" FontWeight="SemiBold" Foreground="#71717A" VerticalAlignment="Center"/>
+                                                    <Button x:Name="DndToggleBtn" HorizontalAlignment="Right" Style="{StaticResource DarkButton}" Padding="7,2" FontSize="9.8" Click="ToggleDnd_Click" ToolTip="Переключить режим Не беспокоить Windows">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock x:Name="DndIconText" Text="🔔" FontSize="9.5" Margin="0,0,4,0"/>
+                                                            <TextBlock x:Name="DndLabelText" Text="Выкл" FontSize="9.8"/>
+                                                        </StackPanel>
+                                                    </Button>
+                                                </Grid>
+                                                <WrapPanel Orientation="Horizontal">
+                                                    <Button Content="30 мин" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="7,3.5" FontSize="9.8" Margin="0,0,4,0" Tag="30" Click="SetDndMinutes_Click"/>
+                                                    <Button Content="1 ч" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="7,3.5" FontSize="9.8" Margin="0,0,4,0" Tag="60" Click="SetDndMinutes_Click"/>
+                                                    <Button Content="2 ч" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="7,3.5" FontSize="9.8" Margin="0,0,4,0" Tag="120" Click="SetDndMinutes_Click"/>
+                                                    <Button Content="Выкл" Style="{StaticResource DarkButton}" Background="#1F2028" BorderThickness="0" Padding="7,3.5" FontSize="9.8" Tag="0" Click="SetDndMinutes_Click"/>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Row 4: Mic & Camera Privacy + Device Batteries -->
+                                    <Grid Margin="0,0,0,9">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10">
+                                            <StackPanel>
+                                                <TextBlock Text="МИКРОФОН И КАМЕРА СЕЙЧАС" FontSize="9" FontWeight="SemiBold" Foreground="#71717A" Margin="0,0,0,4"/>
+                                                <TextBlock x:Name="PrivacyStatusText" Text="Камера и мик свободны" FontSize="11.5" FontWeight="SemiBold" Foreground="#D4D4D8" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock x:Name="SysPrivacySubText" Text="Активных обращений нет" FontSize="10" Foreground="#71717A" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Grid.Column="2" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="14" Padding="12,10">
+                                            <StackPanel>
+                                                <TextBlock Text="ЗАРЯД УСТРОЙСТВ" FontSize="9" FontWeight="SemiBold" Foreground="#71717A" Margin="0,0,0,4"/>
+                                                <TextBlock x:Name="SysBatterySummaryText" Text="Bluetooth-устройства не подключены" FontSize="11" Foreground="#A1A1AA" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Collapsible Full Details Drawer (Bluetooth Devices, Network, Top-3 RAM, Drives, Recent Downloads) -->
+                                    <Button x:Name="SystemDetailsToggleBtn" Content="Диски, Bluetooth, сеть и процессы ▾" Style="{StaticResource DarkButton}" Background="#15161A" BorderBrush="#24252C" HorizontalAlignment="Stretch" Padding="10,7" FontSize="10.8" Foreground="#A1A1AA" Click="SystemDetailsToggle_Click"/>
+
+                                    <StackPanel x:Name="SystemDetailsSection" Visibility="Collapsed" Margin="0,8,0,0">
+                                        <!-- Bluetooth Control & Devices -->
+                                        <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="12" Padding="10,8" Margin="0,0,0,7">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,5">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="Bluetooth" FontSize="11.5" FontWeight="SemiBold" Foreground="#F4F4F5" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="BtStateText" Text="· проверка..." FontSize="10.5" Foreground="#8E9099" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                        <Button x:Name="BtExpandBtn" Content="Все ▾" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10" Margin="0,0,4,0" Click="BtExpandBtn_Click"/>
+                                                        <Button x:Name="BtToggleBtn" Content="Вкл / Выкл" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10.5" Margin="0,0,4,0" Click="ToggleBluetooth_Click"/>
+                                                        <Button Content="⚙" Style="{StaticResource DarkButton}" Padding="7,3" FontSize="10.5" ToolTip="Параметры Bluetooth" Click="OpenBtSettings_Click"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <ItemsControl x:Name="BtDevicesList">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="#1D1E24" CornerRadius="8" Padding="8,4.5" Margin="0,0,0,4">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="Medium" Foreground="#F4F4F5" TextTrimming="CharacterEllipsis"/>
+                                                                        <TextBlock Text="{Binding StatusLabel}" FontSize="9.8" Foreground="#8E9099"/>
+                                                                    </StackPanel>
+                                                                    <Button Grid.Column="1" Content="{Binding ActionLabel}" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10" Tag="{Binding}" Click="BtDeviceAction_Click"/>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <TextBlock x:Name="BtEmptyText" Text="Сопряжённые Bluetooth-устройства не найдены" FontSize="10" Foreground="#71717A" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,2"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Network Speed & Ping -->
+                                        <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="12" Padding="10,7" Margin="0,0,0,7">
+                                            <Grid>
+                                                <Polyline x:Name="NetSparkline" Stroke="#34D399" StrokeThickness="1.5" Opacity="0.4" VerticalAlignment="Bottom" HorizontalAlignment="Right" Height="22" Width="110"/>
+                                                <StackPanel>
+                                                    <TextBlock x:Name="PingHeaderLabel" Text="Сеть · Ping" FontSize="10" Foreground="#71717A"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                        <TextBlock x:Name="NetDownText" Text="↓ 0 КБ/с" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}" Margin="0,0,12,0"/>
+                                                        <TextBlock x:Name="NetUpText" Text="↑ 0 КБ/с" FontSize="11" Foreground="#A1A1AA"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Top 3 Heavy Processes -->
+                                        <TextBlock Text="Топ-3 процесса по ОЗУ (быстрое завершение)" FontSize="10.2" Foreground="#71717A" Margin="2,0,0,4"/>
+                                        <ItemsControl x:Name="TopProcessesList" Margin="0,0,0,6">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="8" Padding="8,4" Margin="0,0,0,3">
+                                                        <Grid>
+                                                            <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="Medium" Foreground="#E4E4E7" MaxWidth="250" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                                <TextBlock FontSize="10.5" Foreground="#94A3B8" Margin="0,0,7,0" VerticalAlignment="Center">
-                                                                    <Run Text="Свободно "/>
-                                                                    <Run Text="{Binding FreeGb, StringFormat={}{0:F1}}" Foreground="#F8FAFC" FontWeight="SemiBold"/>
-                                                                    <Run Text=" ГБ"/>
-                                                                </TextBlock>
-                                                                <Button Content="Открыть" Padding="7,2" FontSize="10" Style="{StaticResource DarkButton}" Tag="{Binding RootPath}" Click="OpenDrive_Click"/>
+                                                                <TextBlock Text="{Binding MemoryFormatted}" FontSize="11" Foreground="#8E9099" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <Button Content="✕" Style="{StaticResource DarkButton}" Background="#3A1D24" Foreground="#FCA5A5" Padding="6,1" FontSize="10" Tag="{Binding}" Click="KillProcess_Click" ToolTip="Завершить процесс"/>
                                                             </StackPanel>
                                                         </Grid>
-                                                        <ProgressBar Grid.Row="1" Minimum="0" Maximum="100" Value="{Binding UsedPercent}" Height="4" Foreground="{DynamicResource AccentBrush}" Background="#242738" BorderThickness="0"/>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
 
-                                    <!-- Recent Downloads -->
-                                    <TextBlock Text="Недавние загрузки" FontSize="10.5" Foreground="#64748B" Margin="2,2,0,4"/>
-                                    <ItemsControl x:Name="RecentDownloadsList">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Style="{StaticResource DarkButton}" Background="#161722" HorizontalContentAlignment="Stretch" Padding="9,5" Margin="0,0,0,3" Tag="{Binding FullPath}" Click="OpenRecentFile_Click" ToolTip="Открыть файл">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="11" Foreground="#E2E8F0" TextTrimming="CharacterEllipsis" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                                        <TextBlock Grid.Column="1" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center">
-                                                            <Run Text="{Binding SizeFormatted}"/>
-                                                            <Run Text=" · "/>
-                                                            <Run Text="{Binding TimeLabel}"/>
-                                                        </TextBlock>
-                                                    </Grid>
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                        <!-- Local Drives -->
+                                        <TextBlock Text="Локальные диски" FontSize="10.2" Foreground="#71717A" Margin="2,2,0,4"/>
+                                        <ItemsControl x:Name="DrivesItemsControl" Margin="0,0,0,6">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="8" Padding="9,6" Margin="0,0,0,4">
+                                                        <Grid>
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto"/>
+                                                                <RowDefinition Height="4"/>
+                                                            </Grid.RowDefinitions>
+                                                            <Grid Grid.Row="0" Margin="0,0,0,4">
+                                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="11.5" Foreground="#F4F4F5"/>
+                                                                    <TextBlock Text="{Binding Label}" FontSize="11" Foreground="#71717A" Margin="6,0,0,0"/>
+                                                                </StackPanel>
+                                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                                    <TextBlock FontSize="10.5" Foreground="#8E9099" Margin="0,0,7,0" VerticalAlignment="Center">
+                                                                        <Run Text="Свободно "/>
+                                                                        <Run Text="{Binding FreeGb, StringFormat={}{0:F1}}" Foreground="#F4F4F5" FontWeight="SemiBold"/>
+                                                                        <Run Text=" ГБ"/>
+                                                                    </TextBlock>
+                                                                    <Button Content="Открыть" Padding="7,2" FontSize="10" Style="{StaticResource DarkButton}" Tag="{Binding RootPath}" Click="OpenDrive_Click"/>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                            <ProgressBar Grid.Row="1" Minimum="0" Maximum="100" Value="{Binding UsedPercent}" Height="4" Foreground="{DynamicResource AccentBrush}" Background="#24252C" BorderThickness="0"/>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <!-- Recent Downloads -->
+                                        <TextBlock Text="Недавние загрузки" FontSize="10.2" Foreground="#71717A" Margin="2,2,0,4"/>
+                                        <ItemsControl x:Name="RecentDownloadsList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Style="{StaticResource DarkButton}" Background="#15161A" BorderBrush="#24252C" HorizontalContentAlignment="Stretch" Padding="9,5" Margin="0,0,0,3" Tag="{Binding FullPath}" Click="OpenRecentFile_Click" ToolTip="Открыть файл">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="11" Foreground="#E4E4E7" TextTrimming="CharacterEllipsis" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Grid.Column="1" FontSize="10" Foreground="#8E9099" VerticalAlignment="Center">
+                                                                <Run Text="{Binding SizeFormatted}"/>
+                                                                <Run Text=" · "/>
+                                                                <Run Text="{Binding TimeLabel}"/>
+                                                            </TextBlock>
+                                                        </Grid>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <!-- 3B. SCREEN TIME & GAME SESSION TAB -->
@@ -1054,7 +1715,7 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <Border Grid.Column="0" Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="10" Padding="10,7">
+                                        <Border Grid.Column="0" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="10" Padding="10,7">
                                             <StackPanel>
                                                 <TextBlock Text="За сессию островка" FontSize="10" Foreground="#64748B"/>
                                                 <TextBlock x:Name="ScreenTimeTotalText" Text="0с" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC"/>
@@ -1062,7 +1723,7 @@
                                             </StackPanel>
                                         </Border>
 
-                                        <Border Grid.Column="2" Background="#161722" BorderBrush="#242738" BorderThickness="1" CornerRadius="10" Padding="10,7">
+                                        <Border Grid.Column="2" Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="10" Padding="10,7">
                                             <StackPanel>
                                                 <TextBlock Text="Игры за сессию" FontSize="10" Foreground="#64748B"/>
                                                 <TextBlock x:Name="ScreenTimeGamesTotalText" Text="0с" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentBrightBrush}"/>
@@ -1071,7 +1732,7 @@
                                         </Border>
                                     </Grid>
 
-                                    <Border Background="#161722" BorderBrush="#262A3E" BorderThickness="1" CornerRadius="10" Padding="9,7" Margin="0,0,0,8">
+                                    <Border Background="#15161A" BorderBrush="#24252C" BorderThickness="1" CornerRadius="10" Padding="9,7" Margin="0,0,0,8">
                                         <Grid>
                                             <TextBlock x:Name="GameStatsDetailText" Text="Полноэкранная игра в этой сессии пока не запускалась" FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/>
                                             <WrapPanel x:Name="GameStatsBadgesPanel" Orientation="Horizontal" Visibility="Collapsed"/>
@@ -1082,7 +1743,7 @@
                                     <ItemsControl x:Name="ScreenTimeListControl" Margin="0,0,0,8">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Background="#161722" CornerRadius="8" Padding="9,6" Margin="0,0,0,4">
+                                                <Border Background="#15161A" CornerRadius="8" Padding="9,6" Margin="0,0,0,4">
                                                     <Grid>
                                                         <Grid.RowDefinitions>
                                                             <RowDefinition Height="Auto"/>
@@ -1095,7 +1756,7 @@
                                                             </StackPanel>
                                                             <TextBlock Text="{Binding SubLabel}" FontSize="10.5" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                                         </Grid>
-                                                        <ProgressBar Grid.Row="1" Minimum="0" Maximum="100" Value="{Binding SharePercent}" Height="4" Foreground="{DynamicResource AccentBrush}" Background="#242738" BorderThickness="0"/>
+                                                        <ProgressBar Grid.Row="1" Minimum="0" Maximum="100" Value="{Binding SharePercent}" Height="4" Foreground="{DynamicResource AccentBrush}" Background="#24252C" BorderThickness="0"/>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
@@ -1119,12 +1780,12 @@
                                     <ItemsControl x:Name="CleanupItemsControl">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Background="#161722" CornerRadius="8" Padding="9,5" Margin="0,0,0,4">
+                                                <Border Background="#15161A" CornerRadius="8" Padding="9,5" Margin="0,0,0,4">
                                                     <Grid>
                                                         <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
                                                             <StackPanel>
                                                                 <TextBlock Text="{Binding Name}" FontSize="11.5" FontWeight="Medium" Foreground="#E2E8F0"/>
-                                                                <TextBlock Text="{Binding Description}" FontSize="9.8" Foreground="#64748B" TextTrimming="CharacterEllipsis" MaxWidth="270"/>
+                                                                <TextBlock Text="{Binding Description}" FontSize="9.8" Foreground="#64748B" TextTrimming="CharacterEllipsis" MaxWidth="310"/>
                                                             </StackPanel>
                                                         </CheckBox>
                                                         <TextBlock Text="{Binding SizeFormatted}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
@@ -1134,8 +1795,8 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
 
-                                    <Grid Margin="0,7,0,0">
-                                        <TextBlock x:Name="CleanupStatusText" Text="Нажмите «Очистить»" FontSize="10.5" Foreground="#94A3B8" VerticalAlignment="Center" MaxWidth="165" TextTrimming="CharacterEllipsis"/>
+                                    <Grid Margin="0,9,0,0">
+                                        <TextBlock x:Name="CleanupStatusText" Text="Нажмите «Очистить»" FontSize="10.5" Foreground="#94A3B8" VerticalAlignment="Center" MaxWidth="210" TextTrimming="CharacterEllipsis"/>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                             <Button x:Name="CleanNowBtn" Content="Удалить файлы" Style="{StaticResource AccentButton}" Padding="11,6" Margin="0,0,5,0" Click="CleanNow_Click"/>
                                             <Button x:Name="OptimizeRamBtn" Content="⚡ ОЗУ" Style="{StaticResource DarkButton}" Padding="10,6" Click="OptimizeRam_Click"/>
@@ -1143,6 +1804,7 @@
                                     </Grid>
                                 </StackPanel>
                             </Grid>
+                            </ScrollViewer>
                         </Grid>
                     </Grid>
                 </Border>
@@ -1162,8 +1824,8 @@
                     CornerRadius="18"
                     Margin="6,2,0,0"
                     VerticalAlignment="Top"
-                    Background="#FC0D0E14"
-                    BorderBrush="#2E3245"
+                    Background="#FC090A0D"
+                    BorderBrush="#24252C"
                     BorderThickness="1"
                     ClipToBounds="True"
                     Cursor="Hand"
@@ -1205,8 +1867,8 @@
                     CornerRadius="0,0,15,15"
                     Margin="5,0,0,0"
                     VerticalAlignment="Top"
-                    Background="#FC0D0E14"
-                    BorderBrush="#2E3245"
+                    Background="#FC090A0D"
+                    BorderBrush="#24252C"
                     BorderThickness="1,0,1,1"
                     Visibility="Collapsed"
                     Cursor="Hand"
@@ -1232,8 +1894,8 @@
                     CornerRadius="0,0,7.5,7.5"
                     Margin="5,0,0,0"
                     VerticalAlignment="Top"
-                    Background="#FC0D0E14"
-                    BorderBrush="#2E3245"
+                    Background="#FC090A0D"
+                    BorderBrush="#24252C"
                     BorderThickness="1,0,1,1"
                     Visibility="Collapsed"
                     Cursor="Hand"

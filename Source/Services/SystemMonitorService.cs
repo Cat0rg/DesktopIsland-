@@ -269,7 +269,7 @@ public class SystemMonitorService
 
     private void SampleGpuMetrics(SystemMetrics metrics)
     {
-        if ((DateTime.UtcNow - _lastGpuPollAt).TotalSeconds < 3.0)
+        if ((DateTime.UtcNow - _lastGpuPollAt).TotalSeconds < 1.5)
         {
             metrics.GpuPercent = _lastGpuPercent;
             metrics.GpuTempC = _lastGpuTempC;

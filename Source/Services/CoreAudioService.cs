@@ -276,6 +276,13 @@ public static class CoreAudioService
 
     public static bool ToggleMicMute()
     {
+        bool next = !IsMicMuted();
+        SetMicMute(next);
+        return next;
+    }
+
+    public static bool SetMicMute(bool mute)
+    {
         try
         {
             var en = CreateEnumerator();
@@ -288,10 +295,9 @@ public static class CoreAudioService
             dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
             if (obj is IAudioEndpointVolume vol)
             {
-                vol.GetMute(out bool muted);
                 var ctx = Guid.Empty;
-                vol.SetMute(!muted, ref ctx);
-                return !muted;
+                vol.SetMute(mute, ref ctx);
+                return true;
             }
         }
         catch { }
@@ -529,6 +535,69 @@ public static class CoreAudioService
             result = !muted;
         });
         return result;
+    }
+
+    public static bool IsProcessMuted(string processKeyword)
+    {
+        bool found = false;
+        bool anyMuted = false;
+        OperateOnProcessNameSessions(processKeyword, sav =>
+        {
+            found = true;
+            sav.GetMute(out bool m);
+            if (m) anyMuted = true;
+        });
+        return found && anyMuted;
+    }
+
+    public static bool SetProcessMute(string processKeyword, bool mute)
+    {
+        bool touched = false;
+        OperateOnProcessNameSessions(processKeyword, sav =>
+        {
+            var ctx = Guid.Empty;
+            sav.SetMute(mute, ref ctx);
+            touched = true;
+        });
+        return touched;
+    }
+
+    private static void OperateOnProcessNameSessions(string processKeyword, Action<ISimpleAudioVolume> action)
+    {
+        try
+        {
+            var en = CreateEnumerator();
+            if (en == null) return;
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0 || dev == null)
+                return;
+
+            var iidMgr = IID_IAudioSessionManager2;
+            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+                return;
+
+            if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+                return;
+
+            sessionEnum.GetCount(out int count);
+            for (int i = 0; i < count; i++)
+            {
+                if (sessionEnum.GetSession(i, out var ctrl) == 0 &&
+                    ctrl is IAudioSessionControl2 c2 &&
+                    c2.GetProcessId(out uint pid) == 0 &&
+                    pid > 0 &&
+                    ctrl is ISimpleAudioVolume sav)
+                {
+                    try
+                    {
+                        using var p = Process.GetProcessById((int)pid);
+                        if (p.ProcessName.Contains(processKeyword, StringComparison.OrdinalIgnoreCase))
+                            action(sav);
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
     }
 
     private static void OperateOnAppSession(int targetPid, Action<ISimpleAudioVolume> action)

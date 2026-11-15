@@ -43,6 +43,12 @@ public partial class MainWindow : Window
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out NativePoint lpPoint);
 
     [DllImport("user32.dll")]
@@ -118,6 +124,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<DriveMetric> _drives = new();
     private readonly ObservableCollection<ProcessMetricItem> _topProcesses = new();
     private readonly ObservableCollection<RecentDownloadItem> _recentDownloads = new();
+    private readonly ObservableCollection<NotificationCenterItem> _notifications = new();
     private readonly ObservableCollection<BluetoothDeviceItem> _btDevices = new();
     private readonly ObservableCollection<ScreenTimeItem> _screenTimeItems = new();
     private readonly ObservableCollection<DropShelfItem> _dropShelfItems = new();
@@ -137,6 +144,9 @@ public partial class MainWindow : Window
     private FileSystemWatcher? _downloadsWatcher;
     private string _lastDownloadToastName = string.Empty;
     private DateTime _lastDownloadToastAt = DateTime.MinValue;
+    private DateTime _toastStartedUtc = DateTime.MinValue;
+    private int _toastTotalMs = 3000;
+    private bool _isToastHovered;
 
     private sealed class ScreenTimeAccumulator
     {
@@ -224,8 +234,6 @@ public partial class MainWindow : Window
     private bool _isOptimizingRam;
     private bool _isShowingRamResult;
     private bool _isAppsEditMode;
-    private bool _isBtExpanded;
-    private bool _isCtrlBtDrawerOpen;
     private bool _isUpdatingVolumeSlider;
     private bool _isInFullscreenGame;
     private bool _isInFullscreenVideo;
@@ -240,7 +248,6 @@ public partial class MainWindow : Window
     private uint _gameSessionPid;
 
     private List<BluetoothDeviceItem> _allBtDevices = new();
-    private readonly ObservableCollection<BluetoothDeviceItem> _ctrlBtDevices = new();
 
     private DateTime _lastAutoRamAt = DateTime.MinValue;
     private DateTime _lastBtPollAt = DateTime.MinValue;
@@ -282,8 +289,8 @@ public partial class MainWindow : Window
         DrivesItemsControl.ItemsSource = _drives;
         TopProcessesList.ItemsSource = _topProcesses;
         RecentDownloadsList.ItemsSource = _recentDownloads;
+        NotificationsListControl.ItemsSource = _notifications;
         BtDevicesList.ItemsSource = _btDevices;
-        CtrlBtDevicesList.ItemsSource = _ctrlBtDevices;
         ScreenTimeListControl.ItemsSource = _screenTimeItems;
         CleanupItemsControl.ItemsSource = _cleanupCategories;
         DropShelfList.ItemsSource = _dropShelfItems;
@@ -347,6 +354,7 @@ public partial class MainWindow : Window
 
         _clipboardService.Attach(this, _settings.EnableClipboardHistory, _settings.ClipboardMaxItems, _settings.PinnedSnippets);
         InitDownloadsWatcher();
+        SeedInitialNotifications();
         QuickCalcBox.PreviewMouseLeftButtonDown += (_, _) => Activate();
 
         PositionTopCenter();
@@ -405,6 +413,7 @@ public partial class MainWindow : Window
                         Dispatcher.BeginInvoke(() =>
                         {
                             RefreshDrives();
+                            AddNotification("💾", "Устройства", $"Подключен диск ({driveLetter}:)", root, "Открыть", () => OpenShellTarget(root));
                             ShowToast("💾", $"Подключен диск ({driveLetter}:)", "Открыть", () => OpenShellTarget(root), 4200);
                         });
                     }
@@ -447,9 +456,6 @@ public partial class MainWindow : Window
 
         ApplyGameVisualChrome();
         CompactNetText.Visibility = (_settings.CompactShowNetwork && _settings.EnableNetworkMonitor)
-            ? Visibility.Visible : Visibility.Collapsed;
-
-        EditAppsBtn.Visibility = (TabApps.IsChecked == true && _isExpanded)
             ? Visibility.Visible : Visibility.Collapsed;
 
         UpdateCenterButtonVisibility();
@@ -1029,7 +1035,7 @@ public partial class MainWindow : Window
         if (CompactToastStrip.Visibility == Visibility.Visible)
         {
             CompactToastStrip.Measure(new System.Windows.Size(double.PositiveInfinity, CompactHeight));
-            contentW = CompactToastStrip.DesiredSize.Width + 28;
+            contentW = Math.Max(220, CompactToastStrip.DesiredSize.Width + 32);
         }
         else if (CompactMusicStrip.Visibility == Visibility.Visible)
         {
@@ -1133,13 +1139,17 @@ public partial class MainWindow : Window
                 ExpandedTabBody.Opacity = 1.0;
                 TabBodyTranslate.BeginAnimation(TranslateTransform.YProperty, null);
                 TabBodyTranslate.Y = 0;
+                TabBodyScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                TabBodyScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                TabBodyScale.ScaleX = 1.0;
+                TabBodyScale.ScaleY = 1.0;
             }
-            EditAppsBtn.Visibility = TabApps.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
             if (TabApps.IsChecked == true)
             {
                 RebuildAppTiles();
                 SyncHomeAppsModeUi();
+                SyncNotificationCenterUi();
                 _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
             }
 
@@ -1158,11 +1168,7 @@ public partial class MainWindow : Window
         else
         {
             _isAppsEditMode = false;
-            _isBtExpanded = false;
-            _isCtrlBtDrawerOpen = false;
-            SyncCtrlBtDrawerUi();
             EditAppsBtn.IsChecked = false;
-            EditAppsBtn.Visibility = Visibility.Collapsed;
             RebuildAppTiles();
 
             ExpandedContentGrid.BeginAnimation(OpacityProperty, null);
@@ -1205,8 +1211,8 @@ public partial class MainWindow : Window
         double curH = IslandBorder.ActualHeight > 0 ? IslandBorder.ActualHeight : IslandBorder.Height;
         bool growing = targetW >= curW - 1 && targetH >= curH - 1;
         IEasingFunction ease = animate && growing
-            ? new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.25 }
-            : new QuarticEase { EasingMode = EasingMode.EaseOut };
+            ? new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.16 }
+            : new QuinticEase { EasingMode = EasingMode.EaseOut };
 
         IslandHoverZone.CornerRadius = new CornerRadius(
             targetCorner.TopLeft > 0 ? targetCorner.TopLeft + 2 : 0,
@@ -1241,17 +1247,95 @@ public partial class MainWindow : Window
 
         ExpandedTabBody.BeginAnimation(OpacityProperty, null);
         ExpandedTabBody.Opacity = 0.0;
-        ExpandedTabBody.BeginAnimation(OpacityProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(190))
+        ExpandedTabBody.BeginAnimation(OpacityProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(220))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         });
 
         TabBodyTranslate.BeginAnimation(TranslateTransform.YProperty, null);
-        TabBodyTranslate.Y = 9.0;
-        TabBodyTranslate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0.0, TimeSpan.FromMilliseconds(220))
+        TabBodyTranslate.Y = 10.0;
+        TabBodyTranslate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0.0, TimeSpan.FromMilliseconds(250))
         {
-            EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+            EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut }
         });
+
+        TabBodyScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        TabBodyScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        TabBodyScale.ScaleX = 0.985;
+        TabBodyScale.ScaleY = 0.985;
+        var scaleEase = new QuinticEase { EasingMode = EasingMode.EaseOut };
+        TabBodyScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(240)) { EasingFunction = scaleEase });
+        TabBodyScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(240)) { EasingFunction = scaleEase });
+    }
+
+    private void AnimatePanelReveal(FrameworkElement panel, bool show, Func<bool>? isStillClosedCheck = null, ScaleTransform? scale = null, TranslateTransform? translate = null)
+    {
+        if (!_settings.EnableAnimations)
+        {
+            panel.BeginAnimation(OpacityProperty, null);
+            panel.Opacity = 1.0;
+            if (translate != null) { translate.BeginAnimation(TranslateTransform.YProperty, null); translate.Y = 0; }
+            if (scale != null) { scale.BeginAnimation(ScaleTransform.ScaleYProperty, null); scale.ScaleY = 1.0; }
+            panel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            ScheduleExpandedResize(animate: false);
+            return;
+        }
+
+        if (show)
+        {
+            panel.Visibility = Visibility.Visible;
+            panel.BeginAnimation(OpacityProperty, null);
+            panel.Opacity = 0.0;
+            panel.BeginAnimation(OpacityProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(210))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+
+            if (translate != null)
+            {
+                translate.BeginAnimation(TranslateTransform.YProperty, null);
+                translate.Y = -8.0;
+                translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0.0, TimeSpan.FromMilliseconds(230))
+                {
+                    EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut }
+                });
+            }
+            if (scale != null)
+            {
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                scale.ScaleY = 0.95;
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(230))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                });
+            }
+            ScheduleExpandedResize(animate: true);
+        }
+        else
+        {
+            if (panel.Visibility != Visibility.Visible) return;
+            var fadeOut = new DoubleAnimation(0.0, TimeSpan.FromMilliseconds(145))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            };
+            fadeOut.Completed += (_, _) =>
+            {
+                if (isStillClosedCheck == null || isStillClosedCheck())
+                {
+                    panel.Visibility = Visibility.Collapsed;
+                    panel.BeginAnimation(OpacityProperty, null);
+                    panel.Opacity = 1.0;
+                    if (translate != null) { translate.BeginAnimation(TranslateTransform.YProperty, null); translate.Y = 0; }
+                    if (scale != null) { scale.BeginAnimation(ScaleTransform.ScaleYProperty, null); scale.ScaleY = 1.0; }
+                    ScheduleExpandedResize(animate: true);
+                }
+            };
+            panel.BeginAnimation(OpacityProperty, fadeOut);
+            if (translate != null)
+                translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-6.0, TimeSpan.FromMilliseconds(145)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } });
+            if (scale != null)
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.96, TimeSpan.FromMilliseconds(145)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } });
+        }
     }
 
     private void UpdateRamPillState(bool animate)
@@ -1394,7 +1478,9 @@ public partial class MainWindow : Window
     {
         _collapseDelayTimer.Stop();
         _lastUserInteractionUtc = DateTime.UtcNow;
-        bool willExpand = !(_isInFullscreenGame && _settings.GameModeAutoProfile && !_isPinned)
+        bool interactiveToastShown = _toastTimer.IsEnabled && _toastAction != null && CompactToastStrip.Visibility == Visibility.Visible;
+        bool willExpand = !interactiveToastShown
+                          && !(_isInFullscreenGame && _settings.GameModeAutoProfile && !_isPinned)
                           && _settings.ExpandOnHover && !_isExpanded;
         if (_isSuperMiniIdle)
             ExitSuperMiniIdle(updateWidth: !willExpand);
@@ -1790,39 +1876,77 @@ public partial class MainWindow : Window
 
     #region Dynamic Toast Banner
 
-    private void ShowToast(string icon, string message, string? actionLabel = null, Action? onAction = null, int durationMs = 3000, double? progressRatio = null, MediaColor? swatchColor = null)
+    private void ShowToast(
+        string icon,
+        string message,
+        string? actionLabel = null,
+        Action? onAction = null,
+        int durationMs = 3000,
+        double? progressRatio = null,
+        MediaColor? swatchColor = null,
+        string? title = null,
+        bool showCountdown = false)
     {
         if (_isSuperMiniIdle)
             ExitSuperMiniIdle(updateWidth: false);
+
         CompactToastIcon.Text = icon;
         CompactToastText.Text = message;
         SideToastText.Text = $"{icon} {message}";
         _toastAction = onAction;
+        _toastTotalMs = Math.Max(800, durationMs);
+        _toastStartedUtc = DateTime.UtcNow;
+
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            CompactToastTitle.Text = title;
+            CompactToastTitle.Visibility = Visibility.Visible;
+            CompactToastIconBadge.Background = new SolidColorBrush(MediaColor.FromRgb(20, 48, 34));
+            CompactToastIconBadge.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(42, 92, 62));
+        }
+        else
+        {
+            CompactToastTitle.Visibility = Visibility.Collapsed;
+            CompactToastIconBadge.Background = new SolidColorBrush(MediaColor.FromRgb(30, 34, 48));
+            CompactToastIconBadge.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(50, 56, 78));
+        }
 
         if (swatchColor.HasValue)
         {
             ToastColorSwatch.Fill = new SolidColorBrush(swatchColor.Value);
             ToastColorSwatch.Visibility = Visibility.Visible;
+            CompactToastIcon.Visibility = Visibility.Collapsed;
         }
         else
         {
             ToastColorSwatch.Visibility = Visibility.Collapsed;
+            CompactToastIcon.Visibility = Visibility.Visible;
         }
 
         if (!string.IsNullOrEmpty(actionLabel) && onAction != null)
         {
             CompactToastActionBtn.Content = actionLabel;
             CompactToastActionBtn.Visibility = Visibility.Visible;
+            ExpandedToastActionBtn.Content = actionLabel;
+            ExpandedToastActionBtn.Visibility = Visibility.Visible;
         }
         else
         {
             CompactToastActionBtn.Visibility = Visibility.Collapsed;
+            ExpandedToastActionBtn.Visibility = Visibility.Collapsed;
         }
 
+        ToastProgressFill.BeginAnimation(WidthProperty, null);
         if (progressRatio.HasValue)
         {
             ToastProgressHost.Visibility = Visibility.Visible;
             ToastProgressFill.Width = 54.0 * Math.Clamp(progressRatio.Value, 0.0, 1.0);
+        }
+        else if (showCountdown)
+        {
+            ToastProgressHost.Visibility = Visibility.Visible;
+            ToastProgressFill.Width = 220.0;
+            ToastProgressFill.BeginAnimation(WidthProperty, new DoubleAnimation(220.0, 0.0, TimeSpan.FromMilliseconds(_toastTotalMs)));
         }
         else
         {
@@ -1832,27 +1956,63 @@ public partial class MainWindow : Window
         if (IsSideDocked && !_isExpanded)
             SideToastText.Visibility = Visibility.Visible;
 
-        ExpandedToastText.Text = $"{icon} {message}";
+        ExpandedToastText.Text = string.IsNullOrWhiteSpace(title) ? $"{icon} {message}" : $"{icon} {title}: {message}";
         ExpandedToastPill.Visibility = Visibility.Visible;
 
         _toastTimer.Stop();
-        _toastTimer.Interval = TimeSpan.FromMilliseconds(durationMs);
+        _toastTimer.Interval = TimeSpan.FromMilliseconds(_toastTotalMs);
         _toastTimer.Start();
 
         SyncCompactStripVisibility();
-        if (!_isExpanded) UpdateCompactWidth(animate: true);
+        if (!_isExpanded)
+        {
+            UpdateCompactWidth(animate: true);
+            if (_settings.EnableAnimations)
+            {
+                var scaleEase = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.25 };
+                CompactToastScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                CompactToastScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                CompactToastScale.ScaleX = 0.94;
+                CompactToastScale.ScaleY = 0.94;
+                CompactToastScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(220)) { EasingFunction = scaleEase });
+                CompactToastScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(220)) { EasingFunction = scaleEase });
+            }
+        }
     }
 
     private void ToastTimer_Tick(object? sender, EventArgs e)
     {
         _toastTimer.Stop();
+        _isToastHovered = false;
+        ToastProgressFill.BeginAnimation(WidthProperty, null);
         ToastProgressHost.Visibility = Visibility.Collapsed;
         ToastColorSwatch.Visibility = Visibility.Collapsed;
+        CompactToastIcon.Visibility = Visibility.Visible;
+        CompactToastTitle.Visibility = Visibility.Collapsed;
         SideToastText.Visibility = Visibility.Collapsed;
         ExpandedToastPill.Visibility = Visibility.Collapsed;
+        ExpandedToastActionBtn.Visibility = Visibility.Collapsed;
         _toastAction = null;
         SyncCompactStripVisibility();
         if (!_isExpanded) UpdateCompactWidth(animate: true);
+    }
+
+    private void CompactToastStrip_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (!_toastTimer.IsEnabled) return;
+        _isToastHovered = true;
+        int elapsed = (int)(DateTime.UtcNow - _toastStartedUtc).TotalMilliseconds;
+        _toastTotalMs = Math.Max(2400, _toastTotalMs - elapsed);
+        _toastTimer.Stop();
+    }
+
+    private void CompactToastStrip_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (!_isToastHovered || CompactToastStrip.Visibility != Visibility.Visible) return;
+        _isToastHovered = false;
+        _toastStartedUtc = DateTime.UtcNow;
+        _toastTimer.Interval = TimeSpan.FromMilliseconds(_toastTotalMs);
+        _toastTimer.Start();
     }
 
     private void CompactToastAction_Click(object sender, RoutedEventArgs e)
@@ -3064,7 +3224,7 @@ public partial class MainWindow : Window
             ? "Запись / трансляция экрана активна"
             : (track.HasSession
                 ? (string.IsNullOrEmpty(track.Artist) ? "Медиаплеер активен" : track.Artist)
-                : "Нажмите ▶ или выберите плеер ниже");
+                : "Нажмите ▶ или откройте плеер ниже");
         MediaPlayGlyph.Visibility = _isMediaPlaying ? Visibility.Collapsed : Visibility.Visible;
         MediaPauseGlyph.Visibility = _isMediaPlaying ? Visibility.Visible : Visibility.Collapsed;
         RemoteEqPanel.Visibility = _isMediaPlaying ? Visibility.Visible : Visibility.Collapsed;
@@ -3077,7 +3237,8 @@ public partial class MainWindow : Window
             : (track.HasSession
                 ? (string.IsNullOrEmpty(track.Artist) ? (track.SourceLabel ?? "Плеер") : track.Artist)
                 : "Включите музыку в плеере");
-        HomeMediaPlayBtn.Content = _isMediaPlaying ? "⏸" : "▶";
+        HomeMediaPlayGlyph.Visibility = _isMediaPlaying ? Visibility.Collapsed : Visibility.Visible;
+        HomeMediaPauseGlyph.Visibility = _isMediaPlaying ? Visibility.Visible : Visibility.Collapsed;
 
         if (track.HasSession && !string.IsNullOrEmpty(track.SourceLabel))
         {
@@ -3171,7 +3332,10 @@ public partial class MainWindow : Window
             if (_connectedBtNames.Count > 0)
             {
                 foreach (var newly in nowConnected.Where(n => !_connectedBtNames.Contains(n)))
+                {
+                    AddNotification("🎧", "Bluetooth", $"Подключено: {newly}", "Беспроводное устройство готово");
                     ShowToast("🎧", $"Bluetooth подключен: {newly}", durationMs: 3200);
+                }
             }
             _connectedBtNames = nowConnected;
 
@@ -3180,7 +3344,10 @@ public partial class MainWindow : Window
                 if (d.IsConnected && d.BatteryPercent.HasValue && d.BatteryPercent.Value < 20)
                 {
                     if (_lowBatteryAlertedDevices.Add(d.Id))
+                    {
+                        AddNotification("🪫", "Батарея", $"{d.Name}: {d.BatteryPercent.Value}%", "Рекомендуется поставить на зарядку");
                         ShowToast("🪫", $"{d.Name}: низкий заряд ({d.BatteryPercent.Value}%)", durationMs: 4200);
+                    }
                 }
                 else if (!d.IsConnected || (d.BatteryPercent.HasValue && d.BatteryPercent.Value >= 25))
                 {
@@ -3188,13 +3355,12 @@ public partial class MainWindow : Window
                 }
             }
 
-            string btStateLabel = !state.Supported ? "· адаптер не найден" : (state.IsOn ? "· Включён" : "· Выключен");
-            BtStateText.Text = btStateLabel;
+            BtStateText.Text = !state.Supported ? "· нет адаптера" : (state.IsOn ? "· Вкл" : "· Выкл");
             BtToggleBtn.IsEnabled = state.Supported;
             BtToggleBtn.Content = state.IsOn ? "Выключить" : "Включить";
-            CtrlBtDrawerStateText.Text = btStateLabel;
-            CtrlBtDrawerToggleBtn.IsEnabled = state.Supported;
-            CtrlBtDrawerToggleBtn.Content = state.IsOn ? "Выключить" : "Включить";
+            BtToggleBtn.Background = new SolidColorBrush(state.IsOn
+                ? MediaColor.FromRgb(30, 58, 138)
+                : MediaColor.FromRgb(31, 32, 40));
 
             _allBtDevices = devices;
             if (_isExpanded && TabSystem.IsChecked == true)
@@ -3208,20 +3374,14 @@ public partial class MainWindow : Window
     private void ApplyBtListFilter()
     {
         _btDevices.Clear();
-        var shown = _isBtExpanded
-            ? _allBtDevices
-            : _allBtDevices.Where(d => d.IsConnected).ToList();
-
-        foreach (var d in shown) _btDevices.Add(d);
-
-        BtExpandBtn.Content = _isBtExpanded ? "Скрыть ▴" : $"Все ({_allBtDevices.Count}) ▾";
-        BtExpandBtn.Visibility = _allBtDevices.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var d in _allBtDevices.OrderByDescending(x => x.IsConnected).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+            _btDevices.Add(d);
 
         if (_btDevices.Count == 0)
         {
-            BtEmptyText.Text = _allBtDevices.Count == 0
-                ? "Сопряжённые устройства не найдены"
-                : "Подключённых устройств нет";
+            BtEmptyText.Text = BtStateText.Text.Contains("Выкл", StringComparison.OrdinalIgnoreCase)
+                ? "Bluetooth выключен"
+                : "Нет сопряжённых устройств";
             BtEmptyText.Visibility = Visibility.Visible;
         }
         else
@@ -3229,62 +3389,8 @@ public partial class MainWindow : Window
             BtEmptyText.Visibility = Visibility.Collapsed;
         }
 
-        _ctrlBtDevices.Clear();
-        foreach (var d in _allBtDevices.OrderByDescending(x => x.IsConnected).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
-            _ctrlBtDevices.Add(d);
-
-        if (_ctrlBtDevices.Count == 0)
-        {
-            CtrlBtEmptyText.Text = BtStateText.Text.Contains("Выключен", StringComparison.OrdinalIgnoreCase)
-                ? "Bluetooth выключен"
-                : "Сопряжённые устройства не найдены";
-            CtrlBtEmptyText.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            CtrlBtEmptyText.Visibility = Visibility.Collapsed;
-        }
-
         if (_isExpanded && TabSystem.IsChecked == true)
             ScheduleExpandedResize(animate: true);
-    }
-
-    private void SyncCtrlBtDrawerUi()
-    {
-        CtrlBtDrawer.Visibility = _isCtrlBtDrawerOpen ? Visibility.Visible : Visibility.Collapsed;
-        CtrlBtArrowText.Text = _isCtrlBtDrawerOpen ? "▴" : "▾";
-        CtrlBtExpandPill.Background = new SolidColorBrush(_isCtrlBtDrawerOpen
-            ? MediaColor.FromRgb(30, 58, 138)
-            : MediaColor.FromRgb(29, 31, 39));
-        CtrlBtExpandPill.BorderBrush = new SolidColorBrush(_isCtrlBtDrawerOpen
-            ? MediaColor.FromRgb(59, 130, 246)
-            : MediaColor.FromRgb(42, 45, 56));
-    }
-
-    private void ToggleCtrlBtDrawer()
-    {
-        _isCtrlBtDrawerOpen = !_isCtrlBtDrawerOpen;
-        SyncCtrlBtDrawerUi();
-        if (_isCtrlBtDrawerOpen)
-        {
-            ApplyBtListFilter();
-            _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
-        }
-        ScheduleExpandedResize(animate: true);
-    }
-
-    private void CtrlBtExpandBtn_Click(object sender, RoutedEventArgs e) => ToggleCtrlBtDrawer();
-
-    private void CtrlBtBtn_MouseRightUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        ToggleCtrlBtDrawer();
-    }
-
-    private void BtExpandBtn_Click(object sender, RoutedEventArgs e)
-    {
-        _isBtExpanded = !_isBtExpanded;
-        ApplyBtListFilter();
     }
 
     private void EqTimer_Tick(object? sender, EventArgs e)
@@ -3421,11 +3527,10 @@ public partial class MainWindow : Window
     private void RemoteExtrasToggle_Click(object sender, RoutedEventArgs e)
     {
         _isRemoteExtrasExpanded = !_isRemoteExtrasExpanded;
-        RemoteExtrasSection.Visibility = _isRemoteExtrasExpanded ? Visibility.Visible : Visibility.Collapsed;
+        AnimatePanelReveal(RemoteExtrasSection, _isRemoteExtrasExpanded, () => !_isRemoteExtrasExpanded, translate: RemoteExtrasTranslate);
         RemoteExtrasToggleBtn.Content = _isRemoteExtrasExpanded
             ? "Скрыть таймер сна, питание и записи ▴"
             : "Таймер сна, питание и записи ▾";
-        ScheduleExpandedResize(animate: true);
     }
 
     private async void MediaPrev_Click(object sender, RoutedEventArgs e)
@@ -3453,65 +3558,46 @@ public partial class MainWindow : Window
     {
         if (sender is FrameworkElement fe && fe.Tag is string player)
         {
-            bool samePlayer = string.Equals(_settings.PreferredMediaPlayer, player, StringComparison.OrdinalIgnoreCase);
-            _settings.PreferredMediaPlayer = player;
-            SettingsService.Save(_settings);
+            if (!_settings.PreferredMediaPlayer.Equals("Auto", StringComparison.OrdinalIgnoreCase))
+            {
+                _settings.PreferredMediaPlayer = "Auto";
+                SettingsService.Save(_settings);
+            }
             SyncPlayerBindingPills();
-            _ = RefreshMediaAndDevicesAsync(false);
 
-            if (samePlayer && !player.Equals("Auto", StringComparison.OrdinalIgnoreCase))
+            if (!player.Equals("Auto", StringComparison.OrdinalIgnoreCase))
             {
                 MediaControlService.LaunchOrFocusPlayer(player);
-                ShowToast("🎵", $"Открываем {(player == "YouTubeMusic" ? "YouTube Music" : player)}...", durationMs: 2200);
-            }
-            else
-            {
-                ShowToast("🎵", $"Плеер: {(player == "YouTubeMusic" ? "YT Music" : player == "Auto" ? "Авто" : player)}", durationMs: 2000);
+                string label = player == "YouTubeMusic" ? "YouTube Music" : player;
+                ShowToast("🎵", $"Открываем {label}...", durationMs: 2200);
             }
         }
     }
 
     private void LaunchBoundPlayer_Click(object sender, RoutedEventArgs e)
     {
-        string target = _settings.PreferredMediaPlayer == "Auto" ? "Spotify" : _settings.PreferredMediaPlayer;
-        MediaControlService.LaunchOrFocusPlayer(target);
-        ShowToast("🎵", $"Открываем {target}...", durationMs: 2200);
+        MediaControlService.LaunchOrFocusPlayer("Spotify");
+        ShowToast("🎵", "Открываем Spotify...", durationMs: 2200);
     }
 
     private void SyncPlayerBindingPills()
     {
-        string pref = string.IsNullOrWhiteSpace(_settings.PreferredMediaPlayer)
-            ? "Auto"
-            : _settings.PreferredMediaPlayer;
+        PlayerAutoBtn.Visibility = Visibility.Collapsed;
+        HomePlayerAutoBtn.Visibility = Visibility.Collapsed;
+        LaunchBoundPlayerBtn.Visibility = Visibility.Collapsed;
 
-        var activeBg = new SolidColorBrush(MediaColor.FromRgb(30, 58, 138));
-        var normalBg = new SolidColorBrush(MediaColor.FromRgb(28, 29, 36));
-        var activeFg = new SolidColorBrush(MediaColor.FromRgb(147, 197, 253));
-        var normalFg = new SolidColorBrush(MediaColor.FromRgb(161, 161, 170));
+        var launcherBg = new SolidColorBrush(MediaColor.FromRgb(31, 32, 40));
+        var launcherFg = new SolidColorBrush(MediaColor.FromRgb(212, 212, 216));
 
-        void StylePill(System.Windows.Controls.Button btn, bool active)
+        foreach (var btn in new[]
         {
-            btn.Background = active ? activeBg : normalBg;
-            btn.Foreground = active ? activeFg : normalFg;
+            PlayerSpotifyBtn, PlayerSoundCloudBtn, PlayerYtMusicBtn,
+            HomePlayerSpotifyBtn, HomePlayerSoundCloudBtn, HomePlayerYtMusicBtn
+        })
+        {
+            btn.Background = launcherBg;
+            btn.Foreground = launcherFg;
         }
-
-        bool isAuto = pref.Equals("Auto", StringComparison.OrdinalIgnoreCase);
-        bool isSpotify = pref.Equals("Spotify", StringComparison.OrdinalIgnoreCase);
-        bool isSc = pref.Equals("SoundCloud", StringComparison.OrdinalIgnoreCase);
-        bool isYt = pref.Equals("YouTubeMusic", StringComparison.OrdinalIgnoreCase);
-
-        StylePill(PlayerAutoBtn, isAuto);
-        StylePill(PlayerSpotifyBtn, isSpotify);
-        StylePill(PlayerSoundCloudBtn, isSc);
-        StylePill(PlayerYtMusicBtn, isYt);
-
-        StylePill(HomePlayerAutoBtn, isAuto);
-        StylePill(HomePlayerSpotifyBtn, isSpotify);
-        StylePill(HomePlayerSoundCloudBtn, isSc);
-        StylePill(HomePlayerYtMusicBtn, isYt);
-
-        LaunchBoundPlayerBtn.Visibility = isAuto ? Visibility.Collapsed : Visibility.Visible;
-        LaunchBoundPlayerBtn.Content = $"↗ Открыть {(isYt ? "YT Music" : pref)}";
     }
 
     private void SwitchAudioOutput_Click(object sender, RoutedEventArgs e)
@@ -3537,6 +3623,7 @@ public partial class MainWindow : Window
     {
         bool nowMuted = CoreAudioService.ToggleMicMute();
         MicMuteBtn.Content = nowMuted ? "🔇 Мик: Выкл" : "🎙 Мик: Вкл";
+        SyncDiscordVoiceButtonsUi();
         ShowToast(nowMuted ? "🔇" : "🎙", nowMuted ? "Микрофон выключен" : "Микрофон включён");
     }
 
@@ -3545,7 +3632,6 @@ public partial class MainWindow : Window
         var state = await BluetoothService.GetAdapterStateAsync();
         if (!state.Supported) return;
         BtToggleBtn.IsEnabled = false;
-        CtrlBtDrawerToggleBtn.IsEnabled = false;
         await BluetoothService.SetAdapterStateAsync(!state.IsOn);
         await Task.Delay(500);
         await RefreshMediaAndDevicesAsync(forceBluetooth: true);
@@ -3828,15 +3914,18 @@ public partial class MainWindow : Window
     private void ToggleInlineAppSearch()
     {
         bool opening = HomeAppSearchDrawer.Visibility != Visibility.Visible;
-        HomeAppSearchDrawer.Visibility = opening ? Visibility.Visible : Visibility.Collapsed;
         if (opening)
         {
             HomeAppSearchBox.Text = string.Empty;
             HomeAppSearchPlaceholder.Visibility = Visibility.Visible;
             PopulateAppSearchResults(string.Empty);
+            AnimatePanelReveal(HomeAppSearchDrawer, true, scale: HomeSearchScale, translate: HomeSearchTranslate);
             HomeAppSearchBox.Focus();
         }
-        ScheduleExpandedResize(animate: true);
+        else
+        {
+            AnimatePanelReveal(HomeAppSearchDrawer, false, null, HomeSearchScale, HomeSearchTranslate);
+        }
     }
 
     private void HomeAppSearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -4538,7 +4627,7 @@ public partial class MainWindow : Window
 
             _downloadsWatcher = new FileSystemWatcher(dlDir, "*.*")
             {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.Size,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.LastWrite,
                 IncludeSubdirectories = false,
                 EnableRaisingEvents = true
             };
@@ -4547,28 +4636,13 @@ public partial class MainWindow : Window
             {
                 if (string.IsNullOrWhiteSpace(fullPath)) return;
                 string ext = IOPath.GetExtension(fullPath).ToLowerInvariant();
-                if (ext is ".tmp" or ".crdownload" or ".part" or ".opdownload" or ".download" or "") return;
+                if (ext is ".tmp" or ".crdownload" or ".part" or ".opdownload" or ".download" or ".partial" or ".!ut" or ".bc!" or ".filepart" or ".idm" or "") return;
                 string name = IOPath.GetFileName(fullPath);
-                if (name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)) return;
+                if (string.IsNullOrEmpty(name) || name.StartsWith("~") || name.StartsWith("Unconfirmed ", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".Zone.Identifier", StringComparison.OrdinalIgnoreCase))
+                    return;
 
-                Dispatcher.BeginInvoke(() =>
-                {
-                    try
-                    {
-                        if (!File.Exists(fullPath)) return;
-                        var fi = new FileInfo(fullPath);
-                        if (fi.Length <= 0) return;
-
-                        if (string.Equals(_lastDownloadToastName, fullPath, StringComparison.OrdinalIgnoreCase) &&
-                            (DateTime.UtcNow - _lastDownloadToastAt).TotalSeconds < 4)
-                            return;
-
-                        _lastDownloadToastName = fullPath;
-                        _lastDownloadToastAt = DateTime.UtcNow;
-                        ShowToast("✅", $"Загружено: {name}", "Открыть", () => OpenShellTarget(fullPath), durationMs: 4200);
-                    }
-                    catch { }
-                });
+                _ = VerifyAndAnnounceDownloadAsync(fullPath, name);
             }
 
             _downloadsWatcher.Renamed += (_, e) => HandleDownloadPath(e.FullPath);
@@ -4578,6 +4652,191 @@ public partial class MainWindow : Window
         {
             LoggerService.Error("Downloads watcher init error", ex);
         }
+    }
+
+    private async Task VerifyAndAnnounceDownloadAsync(string fullPath, string name)
+    {
+        try
+        {
+            long readyLength = 0;
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                await Task.Delay(attempt == 0 ? 350 : 450);
+                if (!File.Exists(fullPath)) return;
+                try
+                {
+                    var fi = new FileInfo(fullPath);
+                    if (fi.Length <= 0) continue;
+                    using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    readyLength = fi.Length;
+                    break;
+                }
+                catch (IOException)
+                {
+                    // File is still being finalized/flushed by browser
+                }
+            }
+            if (readyLength <= 0) return;
+
+            string sizeFormatted = CleanupCategory.FormatBytes(readyLength);
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (string.Equals(_lastDownloadToastName, fullPath, StringComparison.OrdinalIgnoreCase) &&
+                    (DateTime.UtcNow - _lastDownloadToastAt).TotalSeconds < 6)
+                    return;
+
+                _lastDownloadToastName = fullPath;
+                _lastDownloadToastAt = DateTime.UtcNow;
+
+                AddNotification(
+                    icon: "⬇",
+                    appTag: "Загрузки",
+                    title: name,
+                    subtitle: $"Загрузка завершена · {sizeFormatted}",
+                    actionLabel: "Открыть",
+                    onAction: () => OpenShellTarget(fullPath),
+                    targetPath: fullPath);
+
+                ShowToast(
+                    icon: "⬇",
+                    message: $"{name} · {sizeFormatted}",
+                    actionLabel: "Открыть",
+                    onAction: () => OpenShellTarget(fullPath),
+                    durationMs: 8000,
+                    title: "Загрузка завершена",
+                    showCountdown: true);
+
+                var dl = _sysMonitor.GetRecentDownloads(4);
+                _recentDownloads.Clear();
+                foreach (var f in dl) _recentDownloads.Add(f);
+            });
+        }
+        catch { }
+    }
+
+    private async void SeedInitialNotifications()
+    {
+        try
+        {
+            var recent = await Task.Run(() => _sysMonitor.GetRecentDownloads(3));
+            if (recent.Count == 0) return;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                foreach (var item in recent)
+                {
+                    if (_notifications.Any(n => string.Equals(n.TargetPath, item.FullPath, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    _notifications.Add(new NotificationCenterItem
+                    {
+                        Icon = "⬇",
+                        AppTag = "Загрузки",
+                        Title = item.Name,
+                        Subtitle = $"Скачано · {item.SizeFormatted}",
+                        TimeLabel = item.TimeLabel,
+                        ActionLabel = "Открыть",
+                        TargetPath = item.FullPath,
+                        OnAction = () => OpenShellTarget(item.FullPath)
+                    });
+                }
+                SyncNotificationCenterUi();
+            });
+        }
+        catch { }
+    }
+
+    private void AddNotification(
+        string icon,
+        string appTag,
+        string title,
+        string subtitle,
+        string? actionLabel = null,
+        Action? onAction = null,
+        string? targetPath = null)
+    {
+        var existing = _notifications.FirstOrDefault(n =>
+            (!string.IsNullOrEmpty(targetPath) && string.Equals(n.TargetPath, targetPath, StringComparison.OrdinalIgnoreCase)) ||
+            (string.Equals(n.AppTag, appTag, StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(n.Title, title, StringComparison.OrdinalIgnoreCase)));
+        if (existing != null)
+            _notifications.Remove(existing);
+
+        _notifications.Insert(0, new NotificationCenterItem
+        {
+            Icon = icon,
+            AppTag = appTag,
+            Title = title,
+            Subtitle = subtitle,
+            TimeLabel = DateTime.Now.ToString("HH:mm"),
+            ActionLabel = actionLabel,
+            TargetPath = targetPath,
+            OnAction = onAction
+        });
+
+        while (_notifications.Count > 25)
+            _notifications.RemoveAt(_notifications.Count - 1);
+
+        SyncNotificationCenterUi();
+    }
+
+    private void SyncNotificationCenterUi()
+    {
+        int count = _notifications.Count;
+        NotifCountText.Text = count.ToString();
+        NotifCountBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ClearNotificationsBtn.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NotifEmptyText.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        if (_isExpanded && TabApps.IsChecked == true)
+            ScheduleExpandedResize(animate: true);
+    }
+
+    private void NotifAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is NotificationCenterItem item)
+        {
+            if (item.OnAction != null)
+                item.OnAction();
+            else if (!string.IsNullOrEmpty(item.TargetPath))
+                OpenShellTarget(item.TargetPath);
+        }
+    }
+
+    private void NotifOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is NotificationCenterItem item && !string.IsNullOrEmpty(item.TargetPath))
+        {
+            try
+            {
+                if (File.Exists(item.TargetPath))
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.TargetPath}\"") { UseShellExecute = true });
+                else if (Directory.Exists(item.TargetPath))
+                    OpenShellTarget(item.TargetPath);
+            }
+            catch { }
+        }
+    }
+
+    private void NotifDismiss_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is NotificationCenterItem item)
+        {
+            _notifications.Remove(item);
+            SyncNotificationCenterUi();
+        }
+    }
+
+    private void ClearNotifications_Click(object sender, RoutedEventArgs e)
+    {
+        _notifications.Clear();
+        SyncNotificationCenterUi();
+    }
+
+    private void OpenDownloadsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        string dlDir = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        if (Directory.Exists(dlDir))
+            OpenShellTarget(dlDir);
     }
 
     private void OnClipboardTextCopied(string text)
@@ -4832,7 +5091,9 @@ public partial class MainWindow : Window
             SyncRecordingUi();
             if (!string.IsNullOrEmpty(saved))
             {
-                ShowToast("✅", $"Сохранено: {IOPath.GetFileName(saved)}", "Открыть", () => OpenShellTarget(saved), durationMs: 5200);
+                string fileName = IOPath.GetFileName(saved);
+                AddNotification("🔴", "Запись экрана", fileName, "Видео сохранено", "Открыть", () => OpenShellTarget(saved), saved);
+                ShowToast("✅", $"Сохранено: {fileName}", "Открыть", () => OpenShellTarget(saved), durationMs: 5200);
             }
             else
             {
@@ -4998,6 +5259,7 @@ public partial class MainWindow : Window
             if (manual || !string.Equals(latestTag, _lastNotifiedUpdateTag, StringComparison.OrdinalIgnoreCase))
             {
                 _lastNotifiedUpdateTag = latestTag;
+                AddNotification("⬆", "Обновление", $"Доступна версия {latestTag}", "Нажмите, чтобы установить", "Обновить", () => _ = InstallPendingUpdateAsync());
                 ShowToast(
                     "⬆",
                     $"Доступно обновление {latestTag}",
@@ -5323,11 +5585,10 @@ public partial class MainWindow : Window
         ScreenTimePanel.Visibility = TabScreenTime.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         CleanerPanel.Visibility = TabCleaner.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
-        EditAppsBtn.Visibility = TabApps.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-
         if (TabApps.IsChecked == true)
         {
             SyncHomeAppsModeUi();
+            SyncNotificationCenterUi();
             _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
         }
         if (TabRemote.IsChecked == true) _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
@@ -5597,6 +5858,7 @@ public partial class MainWindow : Window
         {
             var (path, _) = ScreenCaptureOcrService.SaveAndCopyBitmap(cropped, "Region");
             AddFileToDropShelf(path);
+            AddNotification("📷", "Скриншот", IOPath.GetFileName(path), "Скопировано в буфер и сохранено", "Открыть", () => OpenShellTarget(path), path);
             FlashIslandBorder(MediaColor.FromRgb(56, 189, 248));
             ShowToast("📷", $"Область скопирована и сохранена: {IOPath.GetFileName(path)}", "Открыть", () => OpenShellTarget(path), durationMs: 3600);
         }
@@ -5614,6 +5876,7 @@ public partial class MainWindow : Window
         if (!string.IsNullOrEmpty(savedPath))
         {
             AddFileToDropShelf(savedPath);
+            AddNotification("🖥", "Скриншот", IOPath.GetFileName(savedPath), "Весь экран скопирован и сохранён", "Открыть", () => OpenShellTarget(savedPath), savedPath);
             FlashIslandBorder(MediaColor.FromRgb(167, 139, 250));
             ShowToast("🖥", $"Скриншот в буфере и на полке: {IOPath.GetFileName(savedPath)}", "Открыть", () => OpenShellTarget(savedPath), durationMs: 3600);
         }
@@ -5864,16 +6127,14 @@ public partial class MainWindow : Window
     private void SystemDetailsToggle_Click(object sender, RoutedEventArgs e)
     {
         _isSystemDetailsExpanded = !_isSystemDetailsExpanded;
-        SystemDetailsSection.Visibility = _isSystemDetailsExpanded ? Visibility.Visible : Visibility.Collapsed;
+        AnimatePanelReveal(SystemDetailsSection, _isSystemDetailsExpanded, () => !_isSystemDetailsExpanded);
         SystemDetailsToggleBtn.Content = _isSystemDetailsExpanded
-            ? "Скрыть диски, Bluetooth, сеть и процессы ▴"
-            : "Диски, Bluetooth, сеть и процессы ▾";
+            ? "Скрыть диски, сеть и процессы ▴"
+            : "Диски, сеть и процессы ▾";
         if (_isSystemDetailsExpanded)
         {
             RefreshDrives();
-            _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
         }
-        ScheduleExpandedResize(animate: true);
     }
 
     private async void CtrlWifi_Click(object sender, RoutedEventArgs e)
@@ -5938,8 +6199,8 @@ public partial class MainWindow : Window
             : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
         CtrlWifiLabel.Text = net.WifiOn ? "Wi-Fi Вкл" : (net.LanConnected ? "Сеть Вкл" : "Wi-Fi Выкл");
 
-        bool btOn = BtStateText.Text.Contains("Включён", StringComparison.OrdinalIgnoreCase)
-            || (!BtStateText.Text.Contains("Выключен", StringComparison.OrdinalIgnoreCase) && _allBtDevices.Count > 0);
+        bool btOn = BtStateText.Text.Contains("Вкл", StringComparison.OrdinalIgnoreCase)
+            || (!BtStateText.Text.Contains("Выкл", StringComparison.OrdinalIgnoreCase) && _allBtDevices.Count > 0);
         CtrlBtCircle.Background = btOn
             ? new SolidColorBrush(MediaColor.FromRgb(37, 99, 235))
             : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
@@ -5954,41 +6215,123 @@ public partial class MainWindow : Window
             : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
         CtrlVpnLabel.Text = net.VpnActive ? net.VpnLabel : "VPN";
 
-        // Discord voice status
+        // Discord voice status & interactive controls
         var (discordRunning, discordInVoice) = HardwareAndUtilityService.GetDiscordVoiceStatus();
         if (discordInVoice)
         {
-            DiscordStatusText.Text = "В голосовом канале";
+            DiscordVoiceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(74, 222, 128));
+            DiscordStatusText.Text = "В голосовом канале · нажми для перехода";
             DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(74, 222, 128));
+            DiscordVoiceControlsPanel.Visibility = Visibility.Visible;
+            SyncDiscordVoiceButtonsUi();
         }
         else if (discordRunning)
         {
-            DiscordStatusText.Text = "Discord запущен (не в голосе)";
+            DiscordVoiceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(96, 165, 250));
+            DiscordStatusText.Text = "Запущен · открыть окно";
             DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(161, 161, 170));
+            DiscordVoiceControlsPanel.Visibility = Visibility.Collapsed;
         }
         else
         {
-            DiscordStatusText.Text = "Discord не запущен";
+            DiscordVoiceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(82, 82, 91));
+            DiscordStatusText.Text = "Не запущен · открыть Discord";
             DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(113, 113, 122));
+            DiscordVoiceControlsPanel.Visibility = Visibility.Collapsed;
         }
 
-        // Device batteries summary (Bluetooth + XInput gamepads)
+        // Gamepads extra battery summary (Bluetooth devices are listed directly above inside BtDevicesList)
         var batParts = new List<string>();
-        foreach (var d in _allBtDevices.Where(x => x.IsConnected))
-        {
-            batParts.Add(d.BatteryPercent.HasValue
-                ? $"{d.Name}: {d.BatteryPercent.Value}%"
-                : $"{d.Name}: подключено");
-        }
         foreach (var pad in gamepads)
         {
             batParts.Add(pad.IsWired
-                ? $"Геймпад #{pad.Index}: провод"
-                : $"Геймпад #{pad.Index}: {pad.BatteryPercent}%");
+                ? $"🎮 Геймпад #{pad.Index}: провод"
+                : $"🎮 Геймпад #{pad.Index}: {pad.BatteryPercent}%");
         }
-        SysBatterySummaryText.Text = batParts.Count > 0
-            ? string.Join("\n", batParts.Take(3))
-            : "Bluetooth-устройства не подключены";
+        SysBatterySummaryText.Text = batParts.Count > 0 ? string.Join(" · ", batParts.Take(2)) : "";
+        SysBatterySummaryText.Visibility = batParts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SyncDiscordVoiceButtonsUi()
+    {
+        bool micMuted = CoreAudioService.IsMicMuted();
+        bool discordMuted = CoreAudioService.IsProcessMuted("Discord");
+
+        DiscordMuteMicBtn.Content = micMuted ? "🔇 Микр вкл" : "🎙 Загл. микр";
+        DiscordMuteMicBtn.Background = micMuted
+            ? new SolidColorBrush(MediaColor.FromRgb(127, 29, 29))
+            : new SolidColorBrush(MediaColor.FromRgb(34, 36, 46));
+        DiscordMuteMicBtn.Foreground = micMuted
+            ? new SolidColorBrush(MediaColor.FromRgb(254, 202, 202))
+            : new SolidColorBrush(MediaColor.FromRgb(228, 228, 231));
+
+        bool deafened = discordMuted && micMuted;
+        DiscordDeafenBtn.Content = deafened ? "🔊 Вкл всё" : "🔕 Микр+Звук";
+        DiscordDeafenBtn.Background = deafened
+            ? new SolidColorBrush(MediaColor.FromRgb(127, 29, 29))
+            : new SolidColorBrush(MediaColor.FromRgb(34, 36, 46));
+        DiscordDeafenBtn.Foreground = deafened
+            ? new SolidColorBrush(MediaColor.FromRgb(254, 202, 202))
+            : new SolidColorBrush(MediaColor.FromRgb(228, 228, 231));
+    }
+
+    private void DiscordCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            foreach (var procName in new[] { "Discord", "DiscordPTB", "DiscordCanary" })
+            {
+                var procs = Process.GetProcessesByName(procName);
+                foreach (var p in procs)
+                {
+                    if (p.MainWindowHandle != IntPtr.Zero)
+                    {
+                        ShowWindow(p.MainWindowHandle, 9);
+                        SetForegroundWindow(p.MainWindowHandle);
+                        ShowToast("💬", "Discord открыт");
+                        return;
+                    }
+                }
+            }
+
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string updateExe = System.IO.Path.Combine(localAppData, "Discord", "Update.exe");
+            if (File.Exists(updateExe))
+            {
+                Process.Start(new ProcessStartInfo(updateExe, "--processStart Discord.exe") { UseShellExecute = true });
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo("discord://") { UseShellExecute = true });
+            }
+            ShowToast("💬", "Запускаем Discord...");
+        }
+        catch (Exception ex)
+        {
+            LoggerService.Error("Discord launch failed", ex);
+            ShowToast("⚠", "Не удалось открыть Discord");
+        }
+    }
+
+    private void DiscordMuteMic_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        bool nowMuted = CoreAudioService.ToggleMicMute();
+        MicMuteBtn.Content = nowMuted ? "🔇 Мик: Выкл" : "🎙 Мик: Вкл";
+        SyncDiscordVoiceButtonsUi();
+        ShowToast(nowMuted ? "🔇" : "🎙", nowMuted ? "Микрофон заглушён" : "Микрофон включён", durationMs: 2000);
+    }
+
+    private void DiscordDeafen_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        bool currentlyDeaf = CoreAudioService.IsProcessMuted("Discord") && CoreAudioService.IsMicMuted();
+        bool targetDeaf = !currentlyDeaf;
+        CoreAudioService.SetProcessMute("Discord", targetDeaf);
+        CoreAudioService.SetMicMute(targetDeaf);
+        MicMuteBtn.Content = targetDeaf ? "🔇 Мик: Выкл" : "🎙 Мик: Вкл";
+        SyncDiscordVoiceButtonsUi();
+        ShowToast(targetDeaf ? "🔕" : "🔊", targetDeaf ? "Discord: микр + звук заглушены" : "Discord: микр + звук включены", durationMs: 2200);
     }
 
     #endregion

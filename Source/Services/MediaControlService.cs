@@ -365,6 +365,8 @@ public static class MediaControlService
         {
             if (string.Equals(player, "Spotify", StringComparison.OrdinalIgnoreCase))
             {
+                if (TryFocusRunningProcess("Spotify")) return;
+
                 var appDataSpotify = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     @"Spotify\Spotify.exe");
@@ -373,18 +375,87 @@ public static class MediaControlService
                     Process.Start(new ProcessStartInfo(appDataSpotify) { UseShellExecute = true });
                     return;
                 }
-                Process.Start(new ProcessStartInfo("spotify:") { UseShellExecute = true });
+
+                var winAppsSpotify = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    @"Microsoft\WindowsApps\Spotify.exe");
+                if (File.Exists(winAppsSpotify))
+                {
+                    Process.Start(new ProcessStartInfo(winAppsSpotify) { UseShellExecute = true });
+                    return;
+                }
+
+                if (TryLaunchStartMenuShortcut("Spotify")) return;
+
+                try { Process.Start(new ProcessStartInfo("spotify:") { UseShellExecute = true }); return; } catch { }
+                Process.Start(new ProcessStartInfo("https://open.spotify.com") { UseShellExecute = true });
             }
             else if (string.Equals(player, "SoundCloud", StringComparison.OrdinalIgnoreCase))
             {
+                if (TryLaunchStartMenuShortcut("SoundCloud")) return;
                 Process.Start(new ProcessStartInfo("https://soundcloud.com") { UseShellExecute = true });
             }
             else if (string.Equals(player, "YouTubeMusic", StringComparison.OrdinalIgnoreCase))
             {
+                if (TryLaunchStartMenuShortcut("YouTube Music")) return;
                 Process.Start(new ProcessStartInfo("https://music.youtube.com") { UseShellExecute = true });
             }
         }
         catch { }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private static bool TryFocusRunningProcess(string processName)
+    {
+        try
+        {
+            var procs = Process.GetProcessesByName(processName);
+            foreach (var p in procs)
+            {
+                var hwnd = p.MainWindowHandle;
+                p.Dispose();
+                if (hwnd != IntPtr.Zero)
+                {
+                    ShowWindow(hwnd, 9); // SW_RESTORE
+                    SetForegroundWindow(hwnd);
+                    return true;
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private static bool TryLaunchStartMenuShortcut(string keyword)
+    {
+        try
+        {
+            var roots = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu\Programs"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"Microsoft\Windows\Start Menu\Programs"),
+                Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
+            };
+
+            foreach (var root in roots)
+            {
+                if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) continue;
+                var match = Directory.EnumerateFiles(root, "*.lnk", SearchOption.AllDirectories)
+                    .FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(match))
+                {
+                    Process.Start(new ProcessStartInfo(match) { UseShellExecute = true });
+                    return true;
+                }
+            }
+        }
+        catch { }
+        return false;
     }
 
     private static void SendMediaKey(byte vk)

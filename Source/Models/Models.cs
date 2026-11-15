@@ -247,6 +247,23 @@ public class BluetoothDeviceItem
         }
     }
     public string ActionLabel => IsConnected ? "Откл." : "Подкл.";
+    public string StatusDotHex => IsConnected ? "#22C55E" : "#52525B";
+}
+
+public class NotificationCenterItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Icon { get; set; } = "🔔";
+    public string AppTag { get; set; } = "Система";
+    public string Title { get; set; } = string.Empty;
+    public string Subtitle { get; set; } = string.Empty;
+    public string TimeLabel { get; set; } = string.Empty;
+    public string BadgeBgHex { get; set; } = "#1A2334";
+    public string? ActionLabel { get; set; }
+    public string? TargetPath { get; set; }
+    public Action? OnAction { get; set; }
+    public bool HasAction => !string.IsNullOrEmpty(ActionLabel) && (OnAction != null || !string.IsNullOrEmpty(TargetPath));
+    public bool HasFolderButton => !string.IsNullOrEmpty(TargetPath) && System.IO.File.Exists(TargetPath);
 }
 
 public class ProcessMetricItem

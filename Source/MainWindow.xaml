@@ -1422,18 +1422,25 @@
                                                     </StackPanel>
                                                 </Button>
 
-                                                <Button x:Name="CtrlBtBtn" Style="{StaticResource AtollUnboxedBtn}" Click="ToggleBluetooth_Click" ToolTip="Включить / выключить Bluetooth">
-                                                    <StackPanel HorizontalAlignment="Center">
-                                                        <Border x:Name="CtrlBtCircle" Width="38" Height="38" CornerRadius="19" Background="#252730" Margin="0,0,0,5">
+                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top">
+                                                    <Button x:Name="CtrlBtBtn" Style="{StaticResource AtollUnboxedBtn}" Click="ToggleBluetooth_Click" MouseRightButtonUp="CtrlBtBtn_MouseRightUp" ToolTip="ЛКМ: вкл/выкл Bluetooth · ПКМ или «▾»: устройства">
+                                                        <Border x:Name="CtrlBtCircle" Width="38" Height="38" CornerRadius="19" Background="#252730" Margin="0,0,0,4">
                                                             <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                                 <Canvas Width="24" Height="24">
                                                                     <Path Data="M 7,7 L 17,16.5 L 12,21 V 3 L 17,7.5 L 7,17" Stroke="#F4F4F5" StrokeThickness="2" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                                                                 </Canvas>
                                                             </Viewbox>
                                                         </Border>
-                                                        <TextBlock x:Name="CtrlBtLabel" Text="Bluetooth" FontSize="10" Foreground="#D4D4D8" HorizontalAlignment="Center"/>
-                                                    </StackPanel>
-                                                </Button>
+                                                    </Button>
+                                                    <Button x:Name="CtrlBtExpandBtn" Style="{StaticResource AtollUnboxedBtn}" Click="CtrlBtExpandBtn_Click" ToolTip="Раскрыть список устройств Bluetooth">
+                                                        <Border x:Name="CtrlBtExpandPill" CornerRadius="8" Background="#1D1F27" BorderBrush="#2A2D38" BorderThickness="1" Padding="7,1.5">
+                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                <TextBlock x:Name="CtrlBtLabel" Text="Bluetooth" FontSize="9.8" Foreground="#D4D4D8" VerticalAlignment="Center"/>
+                                                                <TextBlock x:Name="CtrlBtArrowText" Text="▾" FontSize="9.5" Foreground="#94A3B8" Margin="3,-1,0,0" VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Button>
+                                                </StackPanel>
 
                                                 <Button x:Name="CtrlAirplaneBtn" Style="{StaticResource AtollUnboxedBtn}" Click="CtrlAirplane_Click" ToolTip="Режим полёта Windows">
                                                     <StackPanel HorizontalAlignment="Center">
@@ -1474,6 +1481,51 @@
                                                     </StackPanel>
                                                 </Button>
                                             </UniformGrid>
+
+                                            <!-- Expandable Bluetooth Drawer inside Control Center -->
+                                            <Border x:Name="CtrlBtDrawer" Background="#1B1C22" BorderBrush="#2C2E38" BorderThickness="1" CornerRadius="12" Padding="10,8" Margin="0,0,0,10" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <Grid Margin="0,0,0,7">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <TextBlock Text="Bluetooth" FontSize="11" FontWeight="SemiBold" Foreground="#F4F4F5" VerticalAlignment="Center"/>
+                                                            <TextBlock x:Name="CtrlBtDrawerStateText" Text="· проверка" FontSize="10.2" Foreground="#94A3B8" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Button x:Name="CtrlBtDrawerToggleBtn" Content="Вкл / Выкл" Style="{StaticResource DarkButton}" Padding="8,2.5" FontSize="9.8" Margin="0,0,5,0" Click="ToggleBluetooth_Click"/>
+                                                            <Button Content="⚙" Style="{StaticResource DarkButton}" Padding="6,2.5" FontSize="10" Margin="0,0,5,0" Click="OpenBtSettings_Click" ToolTip="Параметры Bluetooth Windows"/>
+                                                            <Button Content="✕" Style="{StaticResource DarkButton}" Padding="6,2.5" FontSize="9.5" Click="CtrlBtExpandBtn_Click" ToolTip="Свернуть список"/>
+                                                        </StackPanel>
+                                                    </Grid>
+
+                                                    <ScrollViewer MaxHeight="170" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                        <ItemsControl x:Name="CtrlBtDevicesList">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="#22242C" CornerRadius="8" Padding="8,5" Margin="0,0,0,4">
+                                                                        <Grid>
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="*"/>
+                                                                                <ColumnDefinition Width="Auto"/>
+                                                                            </Grid.ColumnDefinitions>
+                                                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,0">
+                                                                                <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="Medium" Foreground="#F4F4F5" TextTrimming="CharacterEllipsis"/>
+                                                                                <TextBlock Text="{Binding StatusLabel}" FontSize="9.8" Foreground="#8E9099" TextTrimming="CharacterEllipsis"/>
+                                                                            </StackPanel>
+                                                                            <Button Grid.Column="1" Content="{Binding ActionLabel}" Style="{StaticResource DarkButton}" Padding="8,3" FontSize="10" Tag="{Binding}" Click="BtDeviceAction_Click"/>
+                                                                        </Grid>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+
+                                                    <TextBlock x:Name="CtrlBtEmptyText" Text="Сопряжённые устройства не найдены" FontSize="10.5" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,4,0,2" Visibility="Collapsed"/>
+                                                </StackPanel>
+                                            </Border>
 
                                             <!-- Action Pills Row (Lock / Sleep / Reboot / Shutdown / Clip / Record / RAM Boost) -->
                                             <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center">

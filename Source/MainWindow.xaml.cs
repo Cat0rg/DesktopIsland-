@@ -225,6 +225,7 @@ public partial class MainWindow : Window
     private bool _isShowingRamResult;
     private bool _isAppsEditMode;
     private bool _isBtExpanded;
+    private bool _isCtrlBtDrawerOpen;
     private bool _isUpdatingVolumeSlider;
     private bool _isInFullscreenGame;
     private bool _isInFullscreenVideo;
@@ -239,6 +240,7 @@ public partial class MainWindow : Window
     private uint _gameSessionPid;
 
     private List<BluetoothDeviceItem> _allBtDevices = new();
+    private readonly ObservableCollection<BluetoothDeviceItem> _ctrlBtDevices = new();
 
     private DateTime _lastAutoRamAt = DateTime.MinValue;
     private DateTime _lastBtPollAt = DateTime.MinValue;
@@ -281,6 +283,7 @@ public partial class MainWindow : Window
         TopProcessesList.ItemsSource = _topProcesses;
         RecentDownloadsList.ItemsSource = _recentDownloads;
         BtDevicesList.ItemsSource = _btDevices;
+        CtrlBtDevicesList.ItemsSource = _ctrlBtDevices;
         ScreenTimeListControl.ItemsSource = _screenTimeItems;
         CleanupItemsControl.ItemsSource = _cleanupCategories;
         DropShelfList.ItemsSource = _dropShelfItems;
@@ -1140,7 +1143,11 @@ public partial class MainWindow : Window
                 _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
             }
 
-            if (TabSystem.IsChecked == true) RefreshDrives();
+            if (TabSystem.IsChecked == true)
+            {
+                RefreshDrives();
+                _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
+            }
             if (TabScreenTime.IsChecked == true) RefreshScreenTimeUi();
             if (TabRemote.IsChecked == true) _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
             if (TabUtils.IsChecked == true) RefreshUtilsTab();
@@ -1152,6 +1159,8 @@ public partial class MainWindow : Window
         {
             _isAppsEditMode = false;
             _isBtExpanded = false;
+            _isCtrlBtDrawerOpen = false;
+            SyncCtrlBtDrawerUi();
             EditAppsBtn.IsChecked = false;
             EditAppsBtn.Visibility = Visibility.Collapsed;
             RebuildAppTiles();
@@ -3179,18 +3188,19 @@ public partial class MainWindow : Window
                 }
             }
 
+            string btStateLabel = !state.Supported ? "· адаптер не найден" : (state.IsOn ? "· Включён" : "· Выключен");
+            BtStateText.Text = btStateLabel;
+            BtToggleBtn.IsEnabled = state.Supported;
+            BtToggleBtn.Content = state.IsOn ? "Выключить" : "Включить";
+            CtrlBtDrawerStateText.Text = btStateLabel;
+            CtrlBtDrawerToggleBtn.IsEnabled = state.Supported;
+            CtrlBtDrawerToggleBtn.Content = state.IsOn ? "Выключить" : "Включить";
+
+            _allBtDevices = devices;
             if (_isExpanded && TabSystem.IsChecked == true)
             {
-                BtStateText.Text = !state.Supported ? "· адаптер не найден" : (state.IsOn ? "· Включён" : "· Выключен");
-                BtToggleBtn.IsEnabled = state.Supported;
-                BtToggleBtn.Content = state.IsOn ? "Выключить" : "Включить";
-
-                _allBtDevices = devices;
                 ApplyBtListFilter();
-            }
-            else
-            {
-                _allBtDevices = devices;
+                RefreshSystemControlCenterUi(HardwareAndUtilityService.GetConnectedGamepads());
             }
         }
     }
@@ -3219,8 +3229,56 @@ public partial class MainWindow : Window
             BtEmptyText.Visibility = Visibility.Collapsed;
         }
 
+        _ctrlBtDevices.Clear();
+        foreach (var d in _allBtDevices.OrderByDescending(x => x.IsConnected).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+            _ctrlBtDevices.Add(d);
+
+        if (_ctrlBtDevices.Count == 0)
+        {
+            CtrlBtEmptyText.Text = BtStateText.Text.Contains("Выключен", StringComparison.OrdinalIgnoreCase)
+                ? "Bluetooth выключен"
+                : "Сопряжённые устройства не найдены";
+            CtrlBtEmptyText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            CtrlBtEmptyText.Visibility = Visibility.Collapsed;
+        }
+
         if (_isExpanded && TabSystem.IsChecked == true)
             ScheduleExpandedResize(animate: true);
+    }
+
+    private void SyncCtrlBtDrawerUi()
+    {
+        CtrlBtDrawer.Visibility = _isCtrlBtDrawerOpen ? Visibility.Visible : Visibility.Collapsed;
+        CtrlBtArrowText.Text = _isCtrlBtDrawerOpen ? "▴" : "▾";
+        CtrlBtExpandPill.Background = new SolidColorBrush(_isCtrlBtDrawerOpen
+            ? MediaColor.FromRgb(30, 58, 138)
+            : MediaColor.FromRgb(29, 31, 39));
+        CtrlBtExpandPill.BorderBrush = new SolidColorBrush(_isCtrlBtDrawerOpen
+            ? MediaColor.FromRgb(59, 130, 246)
+            : MediaColor.FromRgb(42, 45, 56));
+    }
+
+    private void ToggleCtrlBtDrawer()
+    {
+        _isCtrlBtDrawerOpen = !_isCtrlBtDrawerOpen;
+        SyncCtrlBtDrawerUi();
+        if (_isCtrlBtDrawerOpen)
+        {
+            ApplyBtListFilter();
+            _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
+        }
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void CtrlBtExpandBtn_Click(object sender, RoutedEventArgs e) => ToggleCtrlBtDrawer();
+
+    private void CtrlBtBtn_MouseRightUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        ToggleCtrlBtDrawer();
     }
 
     private void BtExpandBtn_Click(object sender, RoutedEventArgs e)
@@ -3487,9 +3545,11 @@ public partial class MainWindow : Window
         var state = await BluetoothService.GetAdapterStateAsync();
         if (!state.Supported) return;
         BtToggleBtn.IsEnabled = false;
+        CtrlBtDrawerToggleBtn.IsEnabled = false;
         await BluetoothService.SetAdapterStateAsync(!state.IsOn);
         await Task.Delay(500);
         await RefreshMediaAndDevicesAsync(forceBluetooth: true);
+        RefreshSystemControlCenterUi(HardwareAndUtilityService.GetConnectedGamepads());
     }
 
     private void OpenBtSettings_Click(object sender, RoutedEventArgs e) => BluetoothService.OpenBluetoothSettings();
@@ -5878,7 +5938,8 @@ public partial class MainWindow : Window
             : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
         CtrlWifiLabel.Text = net.WifiOn ? "Wi-Fi Вкл" : (net.LanConnected ? "Сеть Вкл" : "Wi-Fi Выкл");
 
-        bool btOn = _allBtDevices.Count > 0 || BtStateText.Text.Contains("Включён", StringComparison.OrdinalIgnoreCase);
+        bool btOn = BtStateText.Text.Contains("Включён", StringComparison.OrdinalIgnoreCase)
+            || (!BtStateText.Text.Contains("Выключен", StringComparison.OrdinalIgnoreCase) && _allBtDevices.Count > 0);
         CtrlBtCircle.Background = btOn
             ? new SolidColorBrush(MediaColor.FromRgb(37, 99, 235))
             : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));

@@ -35,10 +35,10 @@ public static class PrivacyAndGameService
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
-    public static PrivacyStatusInfo GetActiveMicAndCamera()
+    public static PrivacyStatusInfo GetActiveMicAndCamera(string? preSampledActiveMic = null, bool usePreSampled = false)
     {
         // Primary mic truth: active WASAPI audio capture session (prevents stale Windows Registry ghosts)
-        string? liveMic = CoreAudioService.GetActiveCaptureProcessName();
+        string? liveMic = usePreSampled ? preSampledActiveMic : CoreAudioService.GetActiveCaptureProcessName();
         if (string.IsNullOrEmpty(liveMic))
             liveMic = FindActiveCapabilityApp(@"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone", verifyRunningForNonPackaged: true, skipNonPackagedIfNoLiveAudio: true);
 

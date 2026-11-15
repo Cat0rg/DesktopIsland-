@@ -575,40 +575,135 @@ del ""%~f0"" >nul 2>&1
                 lon = first.GetProperty("longitude").GetDouble();
             }
 
-            var weatherUrl = $"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={lon.ToString(System.Globalization.CultureInfo.InvariantCulture)}&current_weather=true&hourly=precipitation_probability,weathercode&forecast_hours=2";
+            var weatherUrl = $"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={lon.ToString(System.Globalization.CultureInfo.InvariantCulture)}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=6";
             var wJson = await Http.GetStringAsync(weatherUrl);
             using var wDoc = JsonDocument.Parse(wJson);
-            var cw = wDoc.RootElement.GetProperty("current_weather");
-            double temp = cw.GetProperty("temperature").GetDouble();
-            int code = cw.GetProperty("weathercode").GetInt32();
+            var cur = wDoc.RootElement.GetProperty("current");
+            double temp = cur.GetProperty("temperature_2m").GetDouble();
+            double feelsLike = cur.TryGetProperty("apparent_temperature", out var flEl) ? flEl.GetDouble() : temp;
+            double windKmh = cur.TryGetProperty("wind_speed_10m", out var wEl) ? wEl.GetDouble() : 0;
+            int humidity = cur.TryGetProperty("relative_humidity_2m", out var hEl) ? hEl.GetInt32() : 0;
+            int code = cur.GetProperty("weather_code").GetInt32();
+            string curTimeStr = cur.TryGetProperty("time", out var tEl) ? (tEl.GetString() ?? string.Empty) : string.Empty;
+            DateTime.TryParse(curTimeStr, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var curLocalTime);
 
-            string? rainAlert = null;
+            var info = new WeatherInfo
+            {
+                City = cityName,
+                TempC = temp,
+                FeelsLikeC = feelsLike,
+                WindKmh = windKmh,
+                HumidityPercent = humidity,
+                WmoCode = code,
+                ConditionText = MapWmoCondition(code),
+                IconGlyph = MapWmoCode(code)
+            };
+
             try
             {
                 bool currentlyWet = code >= 51;
-                if (!currentlyWet && wDoc.RootElement.TryGetProperty("hourly", out var hourly))
+                if (wDoc.RootElement.TryGetProperty("hourly", out var hourly))
                 {
-                    if (hourly.TryGetProperty("precipitation_probability", out var probs) && probs.GetArrayLength() >= 2)
+                    var hTimes = hourly.GetProperty("time");
+                    var hTemps = hourly.GetProperty("temperature_2m");
+                    var hCodes = hourly.GetProperty("weather_code");
+                    var hProbs = hourly.GetProperty("precipitation_probability");
+                    int count = Math.Min(Math.Min(hTimes.GetArrayLength(), hTemps.GetArrayLength()), Math.Min(hCodes.GetArrayLength(), hProbs.GetArrayLength()));
+
+                    int startIdx = 0;
+                    if (curLocalTime != default)
                     {
-                        int p1 = probs[0].GetInt32();
-                        int p2 = probs[1].GetInt32();
+                        for (int i = 0; i < count; i++)
+                        {
+                            if (DateTime.TryParse(hTimes[i].GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var ht)
+                                && ht >= curLocalTime.AddMinutes(-30))
+                            {
+                                startIdx = i;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!currentlyWet && startIdx + 1 < count)
+                    {
+                        int p1 = hProbs[startIdx].GetInt32();
+                        int p2 = hProbs[startIdx + 1].GetInt32();
                         int maxProb = Math.Max(p1, p2);
                         if (maxProb >= 60)
-                            rainAlert = $"В ближайший час возможны осадки ({maxProb}%)";
+                            info.RainAlertText = $"В ближайший час возможны осадки ({maxProb}%)";
                     }
+
+                    for (int i = startIdx; i < Math.Min(startIdx + 6, count); i++)
+                    {
+                        string? ts = hTimes[i].GetString();
+                        string hLabel = DateTime.TryParse(ts, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var hdt)
+                            ? (i == startIdx ? "Сейчас" : hdt.ToString("HH:00"))
+                            : "+1ч";
+                        int hc = hCodes[i].GetInt32();
+                        info.Hourly.Add(new WeatherHourItem
+                        {
+                            TimeLabel = hLabel,
+                            TempC = hTemps[i].GetDouble(),
+                            WmoCode = hc,
+                            PrecipProb = hProbs[i].GetInt32(),
+                            IconGlyph = MapWmoCode(hc)
+                        });
+                    }
+                }
+
+                if (wDoc.RootElement.TryGetProperty("daily", out var daily))
+                {
+                    var dTimes = daily.GetProperty("time");
+                    var dCodes = daily.GetProperty("weather_code");
+                    var dMin = daily.GetProperty("temperature_2m_min");
+                    var dMax = daily.GetProperty("temperature_2m_max");
+                    int dCount = Math.Min(5, Math.Min(dTimes.GetArrayLength(), Math.Min(dCodes.GetArrayLength(), Math.Min(dMin.GetArrayLength(), dMax.GetArrayLength()))));
+
+                    var rawDays = new List<WeatherDayItem>();
+                    double globalMin = double.MaxValue, globalMax = double.MinValue;
+                    var ruCulture = new System.Globalization.CultureInfo("ru-RU");
+
+                    for (int i = 0; i < dCount; i++)
+                    {
+                        double minT = dMin[i].GetDouble();
+                        double maxT = dMax[i].GetDouble();
+                        globalMin = Math.Min(globalMin, minT);
+                        globalMax = Math.Max(globalMax, maxT);
+
+                        string dayLabel = i == 0 ? "Сегодня" : "+1д";
+                        if (i > 0 && DateTime.TryParse(dTimes[i].GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var ddt))
+                        {
+                            dayLabel = ruCulture.DateTimeFormat.GetAbbreviatedDayName(ddt.DayOfWeek);
+                            if (dayLabel.Length > 0)
+                                dayLabel = char.ToUpper(dayLabel[0], ruCulture) + dayLabel[1..];
+                        }
+
+                        int dc = dCodes[i].GetInt32();
+                        rawDays.Add(new WeatherDayItem
+                        {
+                            DayLabel = dayLabel,
+                            WmoCode = dc,
+                            IconGlyph = MapWmoCode(dc),
+                            MinTempC = minT,
+                            MaxTempC = maxT
+                        });
+                    }
+
+                    double span = Math.Max(1.0, globalMax - globalMin);
+                    const double trackWidth = 132.0;
+                    foreach (var d in rawDays)
+                    {
+                        double startFrac = (d.MinTempC - globalMin) / span;
+                        double widthFrac = (d.MaxTempC - d.MinTempC) / span;
+                        d.BarLeftPx = Math.Round(startFrac * trackWidth, 1);
+                        d.BarWidthPx = Math.Max(14.0, Math.Round(widthFrac * trackWidth, 1));
+                    }
+                    info.Daily = rawDays;
                 }
             }
             catch { }
 
-            return new WeatherInfo
-            {
-                City = cityName,
-                TempC = temp,
-                WmoCode = code,
-                ConditionText = MapWmoCondition(code),
-                IconGlyph = MapWmoCode(code),
-                RainAlertText = rainAlert
-            };
+            return info;
         }
         catch
         {

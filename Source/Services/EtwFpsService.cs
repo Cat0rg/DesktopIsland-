@@ -96,10 +96,11 @@ public sealed class EtwFpsService : IDisposable
     private ulong _traceHandle = INVALID_PROCESSTRACE_HANDLE;
     private EventRecordCallback? _callbackKeepAlive;
     private bool _disposed;
+    private volatile bool _captureEnabled;
 
     public bool IsAvailable { get; private set; }
 
-    public void Start()
+    public void Start(bool enableProvidersImmediately = false)
     {
         if (_disposed || _worker != null) return;
 
@@ -122,10 +123,14 @@ public sealed class EtwFpsService : IDisposable
                 return;
             }
 
-            Guid dxgi = DxgiProvider;
-            Guid dxg = DxgKrnlProvider;
-            EnableTraceEx2(_sessionHandle, ref dxgi, 1, 4, 0xFFFFFFFFFFFFFFFF, 0, 0, IntPtr.Zero);
-            EnableTraceEx2(_sessionHandle, ref dxg, 1, 4, 0x0000000008000001UL, 0, 0, IntPtr.Zero); // Base + Present (0x8000000)
+            if (enableProvidersImmediately)
+            {
+                Guid dxgi = DxgiProvider;
+                Guid dxg = DxgKrnlProvider;
+                EnableTraceEx2(_sessionHandle, ref dxgi, 1, 4, 0xFFFFFFFFFFFFFFFF, 0, 0, IntPtr.Zero);
+                EnableTraceEx2(_sessionHandle, ref dxg, 1, 4, 0x0000000008000001UL, 0, 0, IntPtr.Zero); // Base + Present (0x8000000)
+                _captureEnabled = true;
+            }
 
             _callbackKeepAlive = OnEventRecord;
             var log = new EVENT_TRACE_LOGFILEW
@@ -167,8 +172,38 @@ public sealed class EtwFpsService : IDisposable
         }
     }
 
+    public void SetCaptureEnabled(bool enabled)
+    {
+        if (!IsAvailable || _disposed || _sessionHandle == 0 || _captureEnabled == enabled)
+            return;
+
+        lock (_sync)
+        {
+            if (_disposed || _sessionHandle == 0 || _captureEnabled == enabled)
+                return;
+
+            _captureEnabled = enabled;
+            Guid dxgi = DxgiProvider;
+            Guid dxg = DxgKrnlProvider;
+            if (enabled)
+            {
+                EnableTraceEx2(_sessionHandle, ref dxgi, 1, 4, 0xFFFFFFFFFFFFFFFF, 0, 0, IntPtr.Zero);
+                EnableTraceEx2(_sessionHandle, ref dxg, 1, 4, 0x0000000008000001UL, 0, 0, IntPtr.Zero);
+            }
+            else
+            {
+                EnableTraceEx2(_sessionHandle, ref dxgi, 0, 0, 0, 0, 0, IntPtr.Zero);
+                EnableTraceEx2(_sessionHandle, ref dxg, 0, 0, 0, 0, 0, IntPtr.Zero);
+                _dxgiFramesByPid.Clear();
+                _dxgFramesByPid.Clear();
+            }
+        }
+    }
+
     private void OnEventRecord(ref EVENT_RECORD rec)
     {
+        if (!_captureEnabled) return;
+
         // DXGI Task 9 = Present, Task 14 = PresentMultiplaneOverlay (Opcode 1 = Start)
         if (rec.ProviderId == DxgiProvider && (rec.Task == 9 || rec.Task == 14) && rec.Opcode == 1)
         {

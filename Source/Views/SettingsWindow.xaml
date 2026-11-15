@@ -9,6 +9,7 @@
         Background="Transparent"
         Foreground="#F1F5F9"
         WindowStartupLocation="CenterScreen"
+        Topmost="True"
         ResizeMode="NoResize">
 
     <Window.Resources>
@@ -347,13 +348,13 @@
                         <TextBlock Text="Авто-ОЗУ, очистка и автозапуск" FontSize="12.5" FontWeight="SemiBold" Foreground="#38BDF8" Margin="2,0,0,6"/>
                         <Border Background="#13131C" BorderBrush="#232433" BorderThickness="1" CornerRadius="14" Padding="14,10">
                             <StackPanel>
-                                <CheckBox x:Name="AutoRamChk" Content="Авто-оптимизация ОЗУ при высокой нагрузке"/>
+                                <CheckBox x:Name="AutoRamChk" Content="Авто-буст ОЗУ (при нагрузке и периодически в фоне)"/>
                                 <Grid Margin="0,2,0,6">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="210"/>
+                                        <ColumnDefinition Width="230"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Порог срабатывания ОЗУ (%, 60–95):" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Порог авто-буста ОЗУ (%, по умолч. 80):" VerticalAlignment="Center"/>
                                     <TextBox x:Name="RamThresholdBox" Grid.Column="1" Width="64" Style="{StaticResource DarkTextBox}"/>
                                 </Grid>
                                 <CheckBox x:Name="ConfirmCleanupChk" Content="Подтверждать очистку Корзины"/>

@@ -313,7 +313,7 @@ public partial class SettingsWindow : Window
         _workingCopy.PollingIntervalMs = int.TryParse(PollingBox.Text, out var poll) ? Math.Clamp(poll, 1000, 10000) : 2000;
 
         _workingCopy.AutoOptimizeRamOnThreshold = AutoRamChk.IsChecked == true;
-        _workingCopy.RamThresholdPercent = int.TryParse(RamThresholdBox.Text, out var ramT) ? Math.Clamp(ramT, 60, 95) : 85;
+        _workingCopy.RamThresholdPercent = int.TryParse(RamThresholdBox.Text, out var ramT) ? Math.Clamp(ramT, 60, 95) : 80;
         _workingCopy.ConfirmControversialCleanup = ConfirmCleanupChk.IsChecked == true;
         _workingCopy.StartWithWindows = AutostartChk.IsChecked == true;
 

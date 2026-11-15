@@ -38,9 +38,35 @@ public class SystemMonitorService
     private double? _lastGpuTempC;
     private PerformanceCounter? _gpuCounter;
     private bool _gpuCounterInitFailed;
+    private uint _lastFgPid;
+    private string _lastFgProcName = string.Empty;
 
     public bool IsEtwFpsActive => _etwFps.IsAvailable;
     public void StopFpsMonitor() => _etwFps.Dispose();
+    public void SetFpsCaptureEnabled(bool enabled)
+    {
+        if (enabled && !_etwStarted)
+        {
+            _etwStarted = true;
+            _etwFps.Start(enableProvidersImmediately: true);
+            return;
+        }
+        if (_etwStarted)
+            _etwFps.SetCaptureEnabled(enabled);
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize, IntPtr dwMaximumWorkingSetSize);
+
+    public static void TrimCurrentProcessWorkingSet()
+    {
+        try
+        {
+            using var proc = Process.GetCurrentProcess();
+            SetProcessWorkingSetSize(proc.Handle, new IntPtr(-1), new IntPtr(-1));
+        }
+        catch { }
+    }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     private struct UNSIGNED_RATIO
@@ -131,7 +157,7 @@ public class SystemMonitorService
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-    public SystemMetrics SampleSystemAndNetwork(bool includeGpu = false)
+    public SystemMetrics SampleSystemAndNetwork(bool includeGpu = false, bool includeNetwork = true, bool sampleFps = true)
     {
         var metrics = new SystemMetrics();
 
@@ -171,47 +197,54 @@ public class SystemMonitorService
         }
 
         // Network
-        try
+        if (includeNetwork)
         {
-            long totalRecv = 0;
-            long totalSent = 0;
-            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            try
             {
-                if (ni.OperationalStatus != OperationalStatus.Up) continue;
-                if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
-                    ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
-                var stats = ni.GetIPv4Statistics();
-                totalRecv += stats.BytesReceived;
-                totalSent += stats.BytesSent;
-            }
-
-            var now = DateTime.UtcNow;
-            if (_hasPrevNet)
-            {
-                double secs = (now - _prevNetTime).TotalSeconds;
-                if (secs > 0.1)
+                long totalRecv = 0;
+                long totalSent = 0;
+                foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
                 {
-                    metrics.NetDownBytesPerSec = Math.Max(0, (totalRecv - _prevBytesRecv) / secs);
-                    metrics.NetUpBytesPerSec = Math.Max(0, (totalSent - _prevBytesSent) / secs);
+                    if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
+                        ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+                    var stats = ni.GetIPv4Statistics();
+                    totalRecv += stats.BytesReceived;
+                    totalSent += stats.BytesSent;
                 }
+
+                var now = DateTime.UtcNow;
+                if (_hasPrevNet)
+                {
+                    double secs = (now - _prevNetTime).TotalSeconds;
+                    if (secs > 0.1)
+                    {
+                        metrics.NetDownBytesPerSec = Math.Max(0, (totalRecv - _prevBytesRecv) / secs);
+                        metrics.NetUpBytesPerSec = Math.Max(0, (totalSent - _prevBytesSent) / secs);
+                    }
+                }
+                _prevBytesRecv = totalRecv;
+                _prevBytesSent = totalSent;
+                _prevNetTime = now;
+                _hasPrevNet = true;
             }
-            _prevBytesRecv = totalRecv;
-            _prevBytesSent = totalSent;
-            _prevNetTime = now;
-            _hasPrevNet = true;
-        }
-        catch
-        {
-            // Ignore transient NIC enumeration error
+            catch
+            {
+                // Ignore transient NIC enumeration error
+            }
         }
 
         // Active Window + ETW/DWM FPS
         try
         {
-            if (!_etwStarted)
+            if (sampleFps && !_etwStarted)
             {
                 _etwStarted = true;
-                _etwFps.Start();
+                _etwFps.Start(enableProvidersImmediately: true);
+            }
+            else if (_etwStarted)
+            {
+                _etwFps.SetCaptureEnabled(sampleFps);
             }
 
             uint fgPid = 0;
@@ -222,38 +255,50 @@ public class SystemMonitorService
                 metrics.ActivePid = fgPid;
                 if (fgPid > 0)
                 {
-                    using var p = System.Diagnostics.Process.GetProcessById((int)fgPid);
-                    metrics.ActiveWindowTitle = p.ProcessName;
+                    if (fgPid == _lastFgPid && !string.IsNullOrEmpty(_lastFgProcName))
+                    {
+                        metrics.ActiveWindowTitle = _lastFgProcName;
+                    }
+                    else
+                    {
+                        using var p = System.Diagnostics.Process.GetProcessById((int)fgPid);
+                        _lastFgPid = fgPid;
+                        _lastFgProcName = p.ProcessName;
+                        metrics.ActiveWindowTitle = _lastFgProcName;
+                    }
                 }
             }
 
-            var etwFps = _etwFps.GetPidFps(fgPid);
-            if (etwFps.HasValue && etwFps.Value > 0)
+            if (sampleFps)
             {
-                metrics.ActiveFps = etwFps.Value;
-            }
-            else
-            {
-                var timing = new DWM_TIMING_INFO { cbSize = Marshal.SizeOf<DWM_TIMING_INFO>() };
-                if (DwmGetCompositionTimingInfo(IntPtr.Zero, ref timing) == 0)
+                var etwFps = _etwFps.GetPidFps(fgPid);
+                if (etwFps.HasValue && etwFps.Value > 0)
                 {
-                    var now = DateTime.UtcNow;
-                    double maxHz = timing.rateRefresh.uiDenominator > 0
-                        ? timing.rateRefresh.uiNumerator / (double)timing.rateRefresh.uiDenominator
-                        : 240.0;
-
-                    if (_hasPrevFps)
+                    metrics.ActiveFps = etwFps.Value;
+                }
+                else
+                {
+                    var timing = new DWM_TIMING_INFO { cbSize = Marshal.SizeOf<DWM_TIMING_INFO>() };
+                    if (DwmGetCompositionTimingInfo(IntPtr.Zero, ref timing) == 0)
                     {
-                        double secs = (now - _prevFpsTime).TotalSeconds;
-                        if (secs > 0.1 && timing.cFrame >= _prevDwmFrame)
+                        var now = DateTime.UtcNow;
+                        double maxHz = timing.rateRefresh.uiDenominator > 0
+                            ? timing.rateRefresh.uiNumerator / (double)timing.rateRefresh.uiDenominator
+                            : 240.0;
+
+                        if (_hasPrevFps)
                         {
-                            double rawFps = (timing.cFrame - _prevDwmFrame) / secs;
-                            metrics.ActiveFps = Math.Clamp(rawFps, 0, Math.Max(60.0, maxHz));
+                            double secs = (now - _prevFpsTime).TotalSeconds;
+                            if (secs > 0.1 && timing.cFrame >= _prevDwmFrame)
+                            {
+                                double rawFps = (timing.cFrame - _prevDwmFrame) / secs;
+                                metrics.ActiveFps = Math.Clamp(rawFps, 0, Math.Max(60.0, maxHz));
+                            }
                         }
+                        _prevDwmFrame = timing.cFrame;
+                        _prevFpsTime = now;
+                        _hasPrevFps = true;
                     }
-                    _prevDwmFrame = timing.cFrame;
-                    _prevFpsTime = now;
-                    _hasPrevFps = true;
                 }
             }
         }

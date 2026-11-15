@@ -67,8 +67,9 @@ public class AppSettings
     public bool GameShowGpuTemp { get; set; } = true;
     public bool GameShowMicMute { get; set; } = true;
     public bool DimOnFullscreenVideo { get; set; } = true;
-    public bool AutoOptimizeRamOnThreshold { get; set; } = false;
-    public int RamThresholdPercent { get; set; } = 85;
+    public bool AutoOptimizeRamOnThreshold { get; set; } = true;
+    public int RamThresholdPercent { get; set; } = 80;
+    public int ConfigRevision { get; set; } = 0;
     public string WeatherCity { get; set; } = string.Empty;
 
     public bool AlwaysOnTop { get; set; } = true;
@@ -77,6 +78,16 @@ public class AppSettings
 
     public bool UseHomeAppsDock { get; set; } = true;
     public string TranslateDirection { get; set; } = "Auto"; // Auto, EnToRu, RuToEn
+    public List<string> HomeWidgetOrder { get; set; } = new() { "QuickTools", "MusicWeather", "HomeDock", "FileShelf", "Notifications" };
+    public List<string> HiddenHomeWidgets { get; set; } = new();
+    public List<QuickNoteItem> QuickNotes { get; set; } = new();
+}
+
+public class QuickNoteItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Text { get; set; } = string.Empty;
+    public bool IsDone { get; set; }
 }
 
 public class ClipboardEntry
@@ -153,6 +164,11 @@ public class DriveMetric
     public double UsedGb { get; set; }
     public double FreeGb { get; set; }
     public double UsedPercent { get; set; }
+
+    public string PercentLabel => $"{UsedPercent:F0}%";
+    public string SpaceSummary => $"{FreeGb:F0} / {TotalGb:F0} ГБ своб.";
+    public string AccentHex => UsedPercent >= 90 ? "#EF4444" : (UsedPercent >= 78 ? "#F59E0B" : "#38BDF8");
+    public string BadgeBgHex => UsedPercent >= 90 ? "#2A1518" : (UsedPercent >= 78 ? "#292011" : "#132433");
 }
 
 public class CleanupCategory
@@ -165,6 +181,39 @@ public class CleanupCategory
     public bool RequiresConfirmation { get; set; } = false;
 
     public string SizeFormatted => FormatBytes(SizeBytes);
+
+    public string AccentHex => Id switch
+    {
+        "user_temp" => "#38BDF8",
+        "win_temp" => "#A78BFA",
+        "thumbs" => "#34D399",
+        "wer" => "#FB7185",
+        "shader_cache" => "#FBBF24",
+        "recycle_bin" => "#F97316",
+        _ => "#60A5FA"
+    };
+
+    public string AccentBgHex => Id switch
+    {
+        "user_temp" => "#12263A",
+        "win_temp" => "#211B38",
+        "thumbs" => "#122B22",
+        "wer" => "#33161E",
+        "shader_cache" => "#312310",
+        "recycle_bin" => "#331E12",
+        _ => "#192234"
+    };
+
+    public string IconData => Id switch
+    {
+        "user_temp" => "M 4,7 H 10 L 12,9 H 20 V 18 A 2,2 0 0 1 18,20 H 6 A 2,2 0 0 1 4,18 Z M 9.5,14 L 14.5,14",
+        "win_temp" => "M 4,4 H 11 V 11 H 4 Z M 13,4 H 20 V 11 H 13 Z M 4,13 H 11 V 20 H 4 Z M 13,13 H 20 V 20 H 13 Z",
+        "thumbs" => "M 4,5 H 20 V 19 H 4 Z M 8.5,10.5 A 1.5,1.5 0 1 1 8.5,7.5 A 1.5,1.5 0 1 1 8.5,10.5 M 5,17 L 10,12 L 13,15 L 16,13 L 19,17",
+        "wer" => "M 12,3 L 21,19 H 3 Z M 12,10 V 14 M 12,16.8 V 17",
+        "shader_cache" => "M 13,2 L 4,14 H 11 L 9,22 L 20,10 H 13 Z",
+        "recycle_bin" => "M 4,7 H 20 M 9,7 V 4 H 15 V 7 M 6,7 L 7,20 H 17 L 18,7 M 10,11 V 16 M 14,11 V 16",
+        _ => "M 5,6 H 19 V 18 H 5 Z"
+    };
 
     public static string FormatBytes(long bytes)
     {
@@ -294,11 +343,41 @@ public class WeatherInfo
 {
     public string City { get; set; } = string.Empty;
     public double TempC { get; set; }
+    public double FeelsLikeC { get; set; }
+    public double WindKmh { get; set; }
+    public int HumidityPercent { get; set; }
     public int WmoCode { get; set; }
     public string ConditionText { get; set; } = "Ясно";
     public string IconGlyph { get; set; } = "☀";
     public string ShortText => $"{Math.Round(TempC):+0;-0;0}°";
+    public string DetailsText => $"Ощущ. {Math.Round(FeelsLikeC):+0;-0;0}° · 💨 {Math.Round(WindKmh)} км/ч · 💧 {HumidityPercent}%";
     public string? RainAlertText { get; set; }
+    public List<WeatherHourItem> Hourly { get; set; } = new();
+    public List<WeatherDayItem> Daily { get; set; } = new();
+}
+
+public class WeatherHourItem
+{
+    public string TimeLabel { get; set; } = string.Empty;
+    public double TempC { get; set; }
+    public int WmoCode { get; set; }
+    public int PrecipProb { get; set; }
+    public string IconGlyph { get; set; } = "☀";
+    public string TempLabel => $"{Math.Round(TempC):+0;-0;0}°";
+    public string PrecipLabel => PrecipProb >= 15 ? $"{PrecipProb}%" : string.Empty;
+}
+
+public class WeatherDayItem
+{
+    public string DayLabel { get; set; } = string.Empty;
+    public int WmoCode { get; set; }
+    public string IconGlyph { get; set; } = "☀";
+    public double MinTempC { get; set; }
+    public double MaxTempC { get; set; }
+    public string MinLabel => $"{Math.Round(MinTempC):+0;-0;0}°";
+    public string MaxLabel => $"{Math.Round(MaxTempC):+0;-0;0}°";
+    public double BarLeftPx { get; set; }
+    public double BarWidthPx { get; set; }
 }
 
 public class DropShelfItem

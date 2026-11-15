@@ -83,6 +83,36 @@ public static class HardwareAndUtilityService
     [DllImport("xinput1_4.dll", EntryPoint = "XInputGetBatteryInformation")]
     private static extern int XInputGetBatteryInformation(uint dwUserIndex, byte devType, out XINPUT_BATTERY_INFORMATION pBatteryInformation);
 
+    private const uint Th32csSnapProcess = 0x00000002;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct PROCESSENTRY32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
     private static Dictionary<string, double> _usdRates = new(StringComparer.OrdinalIgnoreCase);
     private static DateTime _ratesFetchedUtc = DateTime.MinValue;
@@ -224,6 +254,8 @@ public static class HardwareAndUtilityService
         }
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _layoutCodeCache = new();
+
     public static string GetForegroundKeyboardLayoutCode()
     {
         try
@@ -235,9 +267,14 @@ public static class HardwareAndUtilityService
             if (hkl == IntPtr.Zero) return string.Empty;
             int langId = unchecked((short)(hkl.ToInt64() & 0xFFFF));
             if (langId == 0) return string.Empty;
+            if (_layoutCodeCache.TryGetValue(langId, out var cached))
+                return cached;
+
             var culture = CultureInfo.GetCultureInfo(langId);
             string code = culture.TwoLetterISOLanguageName.ToUpperInvariant();
-            return code == "IV" ? string.Empty : code;
+            if (code == "IV") code = string.Empty;
+            _layoutCodeCache[langId] = code;
+            return code;
         }
         catch
         {
@@ -251,40 +288,60 @@ public static class HardwareAndUtilityService
         catch { return false; }
     }
 
-    private static DateTime _lastRecorderCheckUtc = DateTime.MinValue;
+    private static long _lastProcessScanTickMs;
     private static bool _cachedRecorderActive;
-    private static readonly HashSet<string> RecorderProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    private static bool _cachedDiscordRunning;
+    private static readonly HashSet<string> RecorderExeNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        "obs64", "obs32", "streamlabs", "xsplit.core", "bdcam", "action_x64", "medal"
+        "obs64.exe", "obs32.exe", "streamlabs.exe", "xsplit.core.exe", "bdcam.exe", "action_x64.exe", "medal.exe"
     };
+
+    private static void EnsureProcessPresenceSnapshot()
+    {
+        long now = Environment.TickCount64;
+        if (_lastProcessScanTickMs != 0 && now - _lastProcessScanTickMs < 3500)
+            return;
+
+        bool rec = false;
+        bool discord = false;
+        IntPtr snap = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
+        if (snap != IntPtr.Zero && snap != new IntPtr(-1))
+        {
+            try
+            {
+                var pe = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>() };
+                if (Process32First(snap, ref pe))
+                {
+                    do
+                    {
+                        var exe = pe.szExeFile;
+                        if (!string.IsNullOrEmpty(exe))
+                        {
+                            if (!rec && RecorderExeNames.Contains(exe))
+                                rec = true;
+                            if (!discord && exe.Equals("Discord.exe", StringComparison.OrdinalIgnoreCase))
+                                discord = true;
+                            if (rec && discord)
+                                break;
+                        }
+                    }
+                    while (Process32Next(snap, ref pe));
+                }
+            }
+            finally
+            {
+                CloseHandle(snap);
+            }
+        }
+        _cachedRecorderActive = rec;
+        _cachedDiscordRunning = discord;
+        _lastProcessScanTickMs = now;
+    }
 
     public static bool IsRecordingSoftwareActive()
     {
-        if ((DateTime.UtcNow - _lastRecorderCheckUtc).TotalSeconds < 4)
-            return _cachedRecorderActive;
-
-        try
-        {
-            bool found = false;
-            var procs = Process.GetProcesses();
-            foreach (var p in procs)
-            {
-                try
-                {
-                    if (!found && RecorderProcessNames.Contains(p.ProcessName))
-                        found = true;
-                }
-                catch { }
-                finally { p.Dispose(); }
-            }
-            _cachedRecorderActive = found;
-            _lastRecorderCheckUtc = DateTime.UtcNow;
-            return found;
-        }
-        catch
-        {
-            return _cachedRecorderActive;
-        }
+        EnsureProcessPresenceSnapshot();
+        return _cachedRecorderActive;
     }
 
     private static string? _cachedGpuName;
@@ -312,17 +369,15 @@ public static class HardwareAndUtilityService
         return _cachedGpuName;
     }
 
-    public static (bool IsRunning, bool InVoice) GetDiscordVoiceStatus()
+    public static (bool IsRunning, bool InVoice) GetDiscordVoiceStatus(string? preSampledActiveMic = null, bool usePreSampled = false)
     {
         try
         {
-            var procs = Process.GetProcessesByName("Discord");
-            bool running = procs.Length > 0;
-            foreach (var p in procs) p.Dispose();
-            if (!running)
+            EnsureProcessPresenceSnapshot();
+            if (!_cachedDiscordRunning)
                 return (false, false);
 
-            var activeMic = CoreAudioService.GetActiveCaptureProcessName();
+            var activeMic = usePreSampled ? preSampledActiveMic : CoreAudioService.GetActiveCaptureProcessName();
             bool inVoice = !string.IsNullOrEmpty(activeMic) && activeMic.Contains("Discord", StringComparison.OrdinalIgnoreCase);
             return (true, inVoice);
         }

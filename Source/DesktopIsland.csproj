@@ -13,7 +13,7 @@
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AssemblyName>DesktopIsland</AssemblyName>
     <RootNamespace>DesktopIsland</RootNamespace>
-    <Version>1.6.3</Version>
+    <Version>1.6.5</Version>
   </PropertyGroup>
 
   <ItemGroup>

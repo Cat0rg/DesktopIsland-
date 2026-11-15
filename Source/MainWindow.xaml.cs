@@ -123,11 +123,9 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<CleanupCategory> _cleanupCategories = new();
     private readonly ObservableCollection<DriveMetric> _drives = new();
     private readonly ObservableCollection<ProcessMetricItem> _topProcesses = new();
-    private readonly ObservableCollection<RecentDownloadItem> _recentDownloads = new();
     private readonly ObservableCollection<NotificationCenterItem> _notifications = new();
     private readonly ObservableCollection<BluetoothDeviceItem> _btDevices = new();
     private readonly ObservableCollection<ScreenTimeItem> _screenTimeItems = new();
-    private readonly ObservableCollection<DropShelfItem> _dropShelfItems = new();
     private readonly ObservableCollection<AudioSessionItem> _audioSessions = new();
     private readonly ClipboardService _clipboardService = new();
     private readonly ScreenRecorderService _screenRecorder = new();
@@ -137,9 +135,12 @@ public partial class MainWindow : Window
     private readonly Queue<double> _gpuHistory = new(16);
     private readonly Queue<double> _ramHistory = new(16);
     private readonly Queue<double> _netHistory = new(16);
-    private DateTime? _dndAutoOffEndUtc;
+    private DateTime? _focusEndUtc;
     private string _lastCompactGameExePath = string.Empty;
-    private bool _isSystemDetailsExpanded;
+    private bool _isSysDrivesExpanded;
+    private bool _isSysProcessesExpanded;
+    private bool _isHeaderMenuOpen;
+    private DateTime _lastDiscordPollAt = DateTime.MinValue;
     private bool _isRemoteExtrasExpanded;
     private FileSystemWatcher? _downloadsWatcher;
     private string _lastDownloadToastName = string.Empty;
@@ -218,9 +219,6 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _lowBatteryAlertedDevices = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<int> _knownGamepads = new();
     private readonly HashSet<int> _lowBatteryGamepads = new();
-    private MediaPoint _shelfDragStart;
-    private DropShelfItem? _shelfDragItem;
-    private string _lastCalcResult = string.Empty;
     private string _lastTranslateOriginal = string.Empty;
     private string _lastTranslatedText = string.Empty;
 
@@ -240,7 +238,81 @@ public partial class MainWindow : Window
     private bool _isMediaPlaying;
     private bool _isCurrentlyClickThrough;
     private bool _isAltHeldInGame;
+
+    private double _dpiScaleX = 1.0;
+    private double _dpiScaleY = 1.0;
+    private bool _didStartupTrim;
+    private ImageSource? _lastAppliedThumbRef;
+    private readonly SolidColorBrush _dynamicBorderGlowBrush = new(MediaColor.FromRgb(46, 50, 69));
+
+    private static SolidColorBrush FreezeBrush(byte r, byte g, byte b, byte a = 255)
+    {
+        var brush = new SolidColorBrush(MediaColor.FromArgb(a, r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
+    private static readonly SolidColorBrush BrushDefaultBorder = FreezeBrush(46, 50, 69);
+    private static readonly SolidColorBrush BrushAltGameBorder = FreezeBrush(56, 189, 248);
+    private static readonly SolidColorBrush BrushRecordingBorder = FreezeBrush(239, 68, 68);
+    private static readonly SolidColorBrush BrushGameMicMutedBorder = FreezeBrush(220, 38, 38);
+    private static readonly SolidColorBrush BrushFpsGood = FreezeBrush(74, 222, 128);
+    private static readonly SolidColorBrush BrushFpsWarn = FreezeBrush(248, 113, 113);
+    private static readonly SolidColorBrush BrushFpsIdle = FreezeBrush(142, 144, 153);
+    private static readonly SolidColorBrush BrushMetricHighBlue = FreezeBrush(56, 189, 248);
+    private static readonly SolidColorBrush BrushMetricHot = FreezeBrush(248, 113, 113);
+    private static readonly SolidColorBrush BrushMetricNormalCompact = FreezeBrush(203, 213, 225);
+    private static readonly SolidColorBrush BrushMetricNormalCard = FreezeBrush(244, 244, 245);
+    private static readonly SolidColorBrush BrushGpuCyan = FreezeBrush(125, 211, 252);
+    private static readonly SolidColorBrush BrushTempWarm = FreezeBrush(251, 191, 36);
+    private static readonly SolidColorBrush BrushGpuBarPurple = FreezeBrush(192, 132, 252);
+    private static readonly SolidColorBrush BrushPingYellow = FreezeBrush(250, 204, 21);
+    private static readonly SolidColorBrush BrushMicActive = FreezeBrush(226, 232, 240);
+    private static readonly SolidColorBrush BrushMicMutedText = FreezeBrush(252, 165, 165);
+    private static readonly SolidColorBrush BrushTextWhiteLight = FreezeBrush(228, 228, 231);
+    private static readonly SolidColorBrush BrushSpotifyGreen = FreezeBrush(30, 215, 96);
+    private static readonly SolidColorBrush BrushSoundCloudOrange = FreezeBrush(255, 119, 0);
+    private static readonly SolidColorBrush BrushYtRed = FreezeBrush(239, 68, 68);
+    private static readonly SolidColorBrush BrushNeutralDot = FreezeBrush(113, 113, 122);
+    private static readonly SolidColorBrush BrushCtrlBlue = FreezeBrush(37, 99, 235);
+    private static readonly SolidColorBrush BrushCtrlAmber = FreezeBrush(217, 119, 6);
+    private static readonly SolidColorBrush BrushCtrlGreen = FreezeBrush(22, 163, 74);
+    private static readonly SolidColorBrush BrushCtrlDark = FreezeBrush(37, 39, 48);
+    private static readonly SolidColorBrush BrushDiscordBlue = FreezeBrush(96, 165, 250);
+    private static readonly SolidColorBrush BrushDiscordDimGray = FreezeBrush(161, 161, 170);
+    private static readonly SolidColorBrush BrushDiscordOffDot = FreezeBrush(82, 82, 91);
+    private static readonly SolidColorBrush BrushDiscordBtnRedBg = FreezeBrush(127, 29, 29);
+    private static readonly SolidColorBrush BrushDiscordBtnRedFg = FreezeBrush(254, 202, 202);
+    private static readonly SolidColorBrush BrushDiscordBtnDarkBg = FreezeBrush(34, 36, 46);
+    private static readonly SolidColorBrush BrushDiscordBtnGreenBg = FreezeBrush(27, 46, 36);
+    private static readonly SolidColorBrush BrushAppDockTileBg = FreezeBrush(27, 29, 38);
+    private static readonly SolidColorBrush BrushAppDockTileHoverBg = FreezeBrush(39, 43, 58);
+    private static readonly SolidColorBrush BrushAppDockTileBorder = FreezeBrush(44, 48, 64);
+    private static readonly SolidColorBrush BrushAppDockTileHoverBorder = FreezeBrush(76, 86, 114);
+    private static readonly SolidColorBrush BrushAppGridTileBg = FreezeBrush(24, 26, 34);
+    private static readonly SolidColorBrush BrushAppGridTileHoverBg = FreezeBrush(34, 37, 50);
+    private static readonly SolidColorBrush BrushAppGridIconBoxBg = FreezeBrush(33, 36, 48);
+    private static readonly SolidColorBrush BrushAppAddCircleBg = FreezeBrush(42, 44, 52);
+    private static readonly SolidColorBrush BrushAppAddCircleHoverBg = FreezeBrush(58, 62, 76);
+    private static readonly SolidColorBrush BrushRunningPillBlue = FreezeBrush(56, 189, 248);
+    private static readonly SolidColorBrush BrushAutoRamOnBg = FreezeBrush(18, 29, 25);
+    private static readonly SolidColorBrush BrushAutoRamOnBorder = FreezeBrush(32, 56, 45);
+    private static readonly SolidColorBrush BrushAutoRamOffBg = FreezeBrush(22, 23, 28);
+    private static readonly SolidColorBrush BrushAutoRamOffBorder = FreezeBrush(38, 40, 48);
+    private static readonly SolidColorBrush BrushNoteDoneText = FreezeBrush(113, 113, 122);
     private bool _isBorderAlertActive;
+    private bool _isModalDialogOpen;
+    private bool _isWeatherForecastOpen;
+    private bool _isLyricsOpen;
+    private TrackLyricsResult? _currentLyrics;
+    private string _lyricsTrackKey = string.Empty;
+    private bool _lyricsFetchInFlight;
+    private double _lastMediaPositionSec;
+    private double _lastMediaDurationSec;
+    private readonly List<DropShelfItem> _shelfItems = new();
+    private SystemMetrics? _latestMetrics;
+    private MediaPoint? _shelfDragStart;
+    private string? _shelfDragPath;
     private DateTime _lastGameAlertAt = DateTime.MinValue;
     private DateTime _lastGameBoostAt = DateTime.MinValue;
     private DateTime? _gameSessionStartUtc;
@@ -250,6 +322,7 @@ public partial class MainWindow : Window
     private List<BluetoothDeviceItem> _allBtDevices = new();
 
     private DateTime _lastAutoRamAt = DateTime.MinValue;
+    private DateTime _lastPeriodicRamAt = DateTime.UtcNow;
     private DateTime _lastBtPollAt = DateTime.MinValue;
     private HashSet<string> _connectedBtNames = new(StringComparer.OrdinalIgnoreCase);
     private WeatherInfo? _currentWeather;
@@ -288,16 +361,17 @@ public partial class MainWindow : Window
 
         DrivesItemsControl.ItemsSource = _drives;
         TopProcessesList.ItemsSource = _topProcesses;
-        RecentDownloadsList.ItemsSource = _recentDownloads;
         NotificationsListControl.ItemsSource = _notifications;
         BtDevicesList.ItemsSource = _btDevices;
         ScreenTimeListControl.ItemsSource = _screenTimeItems;
         CleanupItemsControl.ItemsSource = _cleanupCategories;
-        DropShelfList.ItemsSource = _dropShelfItems;
-        ClipboardHistoryList.ItemsSource = _clipboardService.Entries;
         AppMixerList.ItemsSource = _audioSessions;
         SyncTranslateDirUi();
         SyncHomeAppsModeUi();
+        ApplyHomeWidgetLayout();
+        SyncAutoRamUi();
+        RebuildQuickNotesUi();
+        RebuildFileShelfUi();
 
         _clipboardService.ClipboardTextCopied += OnClipboardTextCopied;
         _screenRecorder.RecordingError += err => Dispatcher.BeginInvoke(() =>
@@ -355,7 +429,11 @@ public partial class MainWindow : Window
         _clipboardService.Attach(this, _settings.EnableClipboardHistory, _settings.ClipboardMaxItems, _settings.PinnedSnippets);
         InitDownloadsWatcher();
         SeedInitialNotifications();
-        QuickCalcBox.PreviewMouseLeftButtonDown += (_, _) => Activate();
+        HomeQrInputBox.PreviewMouseLeftButtonDown += (_, _) => Activate();
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        _dpiScaleX = dpi.DpiScaleX <= 0 ? 1.0 : dpi.DpiScaleX;
+        _dpiScaleY = dpi.DpiScaleY <= 0 ? 1.0 : dpi.DpiScaleY;
 
         PositionTopCenter();
         UpdateClockDisplay();
@@ -363,11 +441,11 @@ public partial class MainWindow : Window
 
         _monitorTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.PollingIntervalMs, 1000, 10000));
         _monitorTimer.Start();
-        _eqTimer.Start();
         _weatherTimer.Start();
         _updateTimer.Start();
-        _magnetTimer.Start();
-        _inputStateTimer.Start();
+        SyncEqTimerState();
+        SyncMagnetTimerState();
+        SyncInputStateTimerState();
 
         _ = RefreshSystemAndMediaAsync();
         RefreshDrives();
@@ -375,6 +453,17 @@ public partial class MainWindow : Window
         _ = HardwareAndUtilityService.EnsureExchangeRatesAsync();
         _ = RefreshCleanupScanAsync();
         _ = CheckUpdatesOnStartupAsync();
+
+        // One-time startup working-set trim after background init tasks settle
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(9500);
+            if (!_didStartupTrim)
+            {
+                _didStartupTrim = true;
+                SystemMonitorService.TrimCurrentProcessWorkingSet();
+            }
+        });
 
         UpdateCompactWidth(animate: false);
 
@@ -436,12 +525,74 @@ public partial class MainWindow : Window
 
     #region Theme, Positioning & Collapse/Expand Animation
 
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        _dpiScaleX = newDpi.DpiScaleX <= 0 ? 1.0 : newDpi.DpiScaleX;
+        _dpiScaleY = newDpi.DpiScaleY <= 0 ? 1.0 : newDpi.DpiScaleY;
+    }
+
+    private void SyncEqTimerState()
+    {
+        bool shouldRun = _settings.EnableAnimations && _isMediaPlaying &&
+                         ((_isExpanded && TabRemote.IsChecked == true) ||
+                          (!_isExpanded && _settings.CompactShowMedia));
+        if (shouldRun)
+        {
+            if (!_eqTimer.IsEnabled) _eqTimer.Start();
+        }
+        else if (_eqTimer.IsEnabled)
+        {
+            _eqTimer.Stop();
+        }
+    }
+
+    private void SyncMagnetTimerState()
+    {
+        bool shouldRun = _settings.EnableAnimations && !_isExpanded && !_isWindowDragging && !_isInFullscreenGame;
+        if (shouldRun)
+        {
+            if (!_magnetTimer.IsEnabled)
+            {
+                _magnetTimer.Interval = TimeSpan.FromMilliseconds(160);
+                _magnetTimer.Start();
+            }
+        }
+        else
+        {
+            if (_magnetTimer.IsEnabled) _magnetTimer.Stop();
+            if (_isMagnetActive) ResetMagnetImmediate();
+        }
+    }
+
+    private void SyncInputStateTimerState()
+    {
+        if (!_settings.ShowLayoutAndCapsIndicator && !_settings.SuperMiniOnIdle)
+        {
+            _inputStateTimer.Stop();
+            return;
+        }
+        var target = _settings.ShowLayoutAndCapsIndicator
+            ? TimeSpan.FromMilliseconds(300)
+            : TimeSpan.FromMilliseconds(1000);
+        if (_inputStateTimer.Interval != target)
+            _inputStateTimer.Interval = target;
+        if (!_inputStateTimer.IsEnabled)
+            _inputStateTimer.Start();
+    }
+
     private void ApplyThemeBrushes()
     {
         var (primary, bright) = ThemeHelper.GetAccentColors(_settings.AccentTheme);
-        Resources["AccentBrush"] = new SolidColorBrush(primary);
-        Resources["AccentBrightBrush"] = new SolidColorBrush(bright);
-        Resources["AccentSoftBrush"] = new SolidColorBrush(MediaColor.FromArgb(46, primary.R, primary.G, primary.B));
+        var bPrimary = new SolidColorBrush(primary);
+        var bBright = new SolidColorBrush(bright);
+        var bSoft = new SolidColorBrush(MediaColor.FromArgb(46, primary.R, primary.G, primary.B));
+        bPrimary.Freeze();
+        bBright.Freeze();
+        bSoft.Freeze();
+        Resources["AccentBrush"] = bPrimary;
+        Resources["AccentBrightBrush"] = bBright;
+        Resources["AccentSoftBrush"] = bSoft;
     }
 
     private void ApplySettingsVisuals()
@@ -457,6 +608,10 @@ public partial class MainWindow : Window
         ApplyGameVisualChrome();
         CompactNetText.Visibility = (_settings.CompactShowNetwork && _settings.EnableNetworkMonitor)
             ? Visibility.Visible : Visibility.Collapsed;
+
+        SyncEqTimerState();
+        SyncMagnetTimerState();
+        SyncInputStateTimerState();
 
         UpdateCenterButtonVisibility();
         PositionTopCenter();
@@ -634,28 +789,41 @@ public partial class MainWindow : Window
         SetWindowClickThrough(clickThrough);
     }
 
+    private string? _cachedNeonThemeKey;
+    private SolidColorBrush? _cachedNeonBrush;
+
+    private SolidColorBrush GetNeonBorderBrush()
+    {
+        if (_cachedNeonBrush != null && string.Equals(_cachedNeonThemeKey, _settings.AccentTheme, StringComparison.Ordinal))
+            return _cachedNeonBrush;
+        var (_, bright) = ThemeHelper.GetAccentColors(_settings.AccentTheme);
+        var b = FreezeBrush(bright.R, bright.G, bright.B, 190);
+        _cachedNeonThemeKey = _settings.AccentTheme;
+        _cachedNeonBrush = b;
+        return b;
+    }
+
     private void ApplyCurrentIslandBorder()
     {
         if (_isBorderAlertActive) return;
         if (_isInFullscreenGame && _settings.GameModeAutoProfile && _isAltHeldInGame)
         {
-            IslandBorder.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(56, 189, 248));
+            IslandBorder.BorderBrush = BrushAltGameBorder;
             return;
         }
         if (_screenRecorder.IsRecording)
         {
-            IslandBorder.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68));
+            IslandBorder.BorderBrush = BrushRecordingBorder;
             return;
         }
         if (_isInFullscreenGame && _settings.GameModeAutoProfile && _isMicMutedCached && _settings.GameShowMicMute)
         {
-            IslandBorder.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(220, 38, 38));
+            IslandBorder.BorderBrush = BrushGameMicMutedBorder;
             return;
         }
         if (_settings.BorderStyle == "Neon")
         {
-            var (_, bright) = ThemeHelper.GetAccentColors(_settings.AccentTheme);
-            IslandBorder.BorderBrush = new SolidColorBrush(MediaColor.FromArgb(190, bright.R, bright.G, bright.B));
+            IslandBorder.BorderBrush = GetNeonBorderBrush();
             return;
         }
         if (_settings.BorderStyle == "Minimal")
@@ -663,13 +831,14 @@ public partial class MainWindow : Window
             IslandBorder.BorderBrush = MediaBrushes.Transparent;
             return;
         }
-        IslandBorder.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(46, 50, 69));
+        IslandBorder.BorderBrush = BrushDefaultBorder;
     }
 
     private void FlashIslandBorder(MediaColor color)
     {
         _isBorderAlertActive = true;
-        IslandBorder.BorderBrush = new SolidColorBrush(color);
+        _dynamicBorderGlowBrush.Color = color;
+        IslandBorder.BorderBrush = _dynamicBorderGlowBrush;
         _borderAlertResetTimer.Stop();
         _borderAlertResetTimer.Start();
     }
@@ -756,18 +925,18 @@ public partial class MainWindow : Window
 
         if (muted)
         {
-            MicCapsulePath.Fill = new SolidColorBrush(MediaColor.FromRgb(248, 113, 113));
-            MicStandPath.Stroke = new SolidColorBrush(MediaColor.FromRgb(248, 113, 113));
+            MicCapsulePath.Fill = BrushFpsWarn;
+            MicStandPath.Stroke = BrushFpsWarn;
             MicSlashLine.Visibility = Visibility.Visible;
-            GameMicPill.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68));
+            GameMicPill.BorderBrush = BrushRecordingBorder;
             GameMicPill.ToolTip = "Микрофон ВЫКЛ (Alt + клик — включить)";
         }
         else
         {
-            MicCapsulePath.Fill = new SolidColorBrush(MediaColor.FromRgb(226, 232, 240));
-            MicStandPath.Stroke = new SolidColorBrush(MediaColor.FromRgb(226, 232, 240));
+            MicCapsulePath.Fill = BrushMicActive;
+            MicStandPath.Stroke = BrushMicActive;
             MicSlashLine.Visibility = Visibility.Collapsed;
-            GameMicPill.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(46, 50, 69));
+            GameMicPill.BorderBrush = BrushDefaultBorder;
             GameMicPill.ToolTip = "Микрофон ВКЛ (Alt + клик — выключить)";
         }
         ApplyCurrentIslandBorder();
@@ -775,7 +944,7 @@ public partial class MainWindow : Window
 
     private void UpdateCenterButtonVisibility()
     {
-        CenterPosBtn.Visibility = (EffectiveDockEdge != "Top" || Math.Abs(CurrentHorizontalOffsetPx) > 8)
+        MenuCenterPosBtn.Visibility = (EffectiveDockEdge != "Top" || Math.Abs(CurrentHorizontalOffsetPx) > 8)
             ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -1149,34 +1318,82 @@ public partial class MainWindow : Window
             {
                 RebuildAppTiles();
                 SyncHomeAppsModeUi();
+                ApplyHomeWidgetLayout();
                 SyncNotificationCenterUi();
+                SyncDiscordUiState();
                 _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
             }
 
             if (TabSystem.IsChecked == true)
             {
                 RefreshDrives();
-                _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
+                _ = RefreshSystemAndMediaAsync();
             }
-            if (TabScreenTime.IsChecked == true) RefreshScreenTimeUi();
+            if (TabScreenTime.IsChecked == true)
+            {
+                RefreshScreenTimeUi();
+                RebuildQuickNotesUi();
+            }
             if (TabRemote.IsChecked == true) _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
-            if (TabUtils.IsChecked == true) RefreshUtilsTab();
-            if (TabCleaner.IsChecked == true) _ = RefreshCleanupScanAsync();
+            if (TabCleaner.IsChecked == true)
+            {
+                SyncAutoRamUi();
+                UpdateCleanerRamUi(_latestMetrics);
+                _ = RefreshCleanupScanAsync();
+            }
 
             ScheduleExpandedResize(animate: true);
         }
         else
         {
             _isAppsEditMode = false;
+            _isHeaderMenuOpen = false;
+            HeaderActionsMenuBorder.Visibility = Visibility.Collapsed;
             EditAppsBtn.IsChecked = false;
+            SyncHomeWidgetEditChrome();
             RebuildAppTiles();
 
-            ExpandedContentGrid.BeginAnimation(OpacityProperty, null);
-            ExpandedContentGrid.Opacity = 1.0;
-            ExpandedContentGrid.Visibility = Visibility.Collapsed;
-            CompactContentGrid.Visibility = Visibility.Visible;
-            UpdateCompactWidth(animate: true);
+            if (_settings.EnableAnimations)
+            {
+                var fadeOut = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(95))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+                };
+                fadeOut.Completed += (_, _) =>
+                {
+                    if (_isExpanded) return;
+                    ExpandedContentGrid.BeginAnimation(OpacityProperty, null);
+                    ExpandedContentGrid.Opacity = 1.0;
+                    ExpandedContentGrid.Visibility = Visibility.Collapsed;
+                    CompactContentGrid.Visibility = Visibility.Visible;
+                    CompactContentGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1.0, TimeSpan.FromMilliseconds(140)));
+                };
+                ExpandedContentGrid.BeginAnimation(OpacityProperty, fadeOut);
+                UpdateCompactWidth(animate: true);
+            }
+            else
+            {
+                ExpandedContentGrid.BeginAnimation(OpacityProperty, null);
+                ExpandedContentGrid.Opacity = 1.0;
+                ExpandedContentGrid.Visibility = Visibility.Collapsed;
+                CompactContentGrid.Visibility = Visibility.Visible;
+                UpdateCompactWidth(animate: true);
+            }
         }
+
+        SyncMagnetTimerState();
+        SyncEqTimerState();
+    }
+
+    private void Window_Deactivated(object? sender, EventArgs e)
+    {
+        if (!_isExpanded || _isPinned || _isAppsEditMode || _isHeaderMenuOpen || _isModalDialogOpen || _isWindowDragging)
+            return;
+        if (HomeQrCard.Visibility == Visibility.Visible || HomeAppSearchDrawer.Visibility == Visibility.Visible)
+            return;
+
+        _collapseDelayTimer.Stop();
+        SetExpanded(false);
     }
 
     private void ScheduleExpandedResize(bool animate)
@@ -1400,18 +1617,15 @@ public partial class MainWindow : Window
     {
         if (!_settings.EnableAnimations || _isExpanded || _isWindowDragging || _isInFullscreenGame)
         {
-            if (_isMagnetActive) ResetMagnetImmediate();
+            SyncMagnetTimerState();
             return;
         }
 
         if (!GetCursorPos(out var pt))
             return;
 
-        var dpi = VisualTreeHelper.GetDpi(this);
-        double dpiX = dpi.DpiScaleX <= 0 ? 1.0 : dpi.DpiScaleX;
-        double dpiY = dpi.DpiScaleY <= 0 ? 1.0 : dpi.DpiScaleY;
-        double cx = pt.X / dpiX;
-        double cy = pt.Y / dpiY;
+        double cx = pt.X / _dpiScaleX;
+        double cy = pt.Y / _dpiScaleY;
 
         double w = IslandBorder.ActualWidth > 0 ? IslandBorder.ActualWidth : 240;
         double h = IslandBorder.ActualHeight > 0 ? IslandBorder.ActualHeight : 36;
@@ -1424,8 +1638,20 @@ public partial class MainWindow : Window
         double nearY = Math.Clamp(cy, top, bottom);
         double dx = cx - nearX;
         double dy = cy - nearY;
-        double dist = Math.Sqrt(dx * dx + dy * dy);
+        double distSq = dx * dx + dy * dy;
 
+        // Throttle cursor polling when mouse is far away; ramp up to 30ms when approaching island
+        if (distSq > 140.0 * 140.0 && !_isMagnetActive && !_isSuperMiniIdle)
+        {
+            if (_magnetTimer.Interval.TotalMilliseconds < 150)
+                _magnetTimer.Interval = TimeSpan.FromMilliseconds(160);
+            return;
+        }
+
+        if (_magnetTimer.Interval.TotalMilliseconds > 40)
+            _magnetTimer.Interval = TimeSpan.FromMilliseconds(30);
+
+        double dist = Math.Sqrt(distSq);
         const double maxRadius = 56.0;
         if (dist <= 75.0 && _isSuperMiniIdle)
         {
@@ -1512,11 +1738,8 @@ public partial class MainWindow : Window
         try
         {
             if (!GetCursorPos(out var pt)) return false;
-            var dpi = VisualTreeHelper.GetDpi(this);
-            double dpiX = dpi.DpiScaleX <= 0 ? 1.0 : dpi.DpiScaleX;
-            double dpiY = dpi.DpiScaleY <= 0 ? 1.0 : dpi.DpiScaleY;
-            double cx = pt.X / dpiX;
-            double cy = pt.Y / dpiY;
+            double cx = pt.X / _dpiScaleX;
+            double cy = pt.Y / _dpiScaleY;
 
             double w = OuterDockStack.ActualWidth > 0 ? OuterDockStack.ActualWidth : ActualWidth;
             double h = OuterDockStack.ActualHeight > 0 ? OuterDockStack.ActualHeight : ActualHeight;
@@ -1532,14 +1755,14 @@ public partial class MainWindow : Window
         _isRamHovered = true;
         // Blue outline around circle + yellow outline on lightning bolt; NEVER expands island!
         RamQuickPill.SetResourceReference(Border.BorderBrushProperty, "AccentBrightBrush");
-        RamLightningPath.Stroke = new SolidColorBrush(MediaColor.FromRgb(250, 204, 21));
+        RamLightningPath.Stroke = BrushPingYellow;
         UpdateRamPillState(animate: true);
     }
 
     private void RamQuickPill_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
         _isRamHovered = false;
-        RamQuickPill.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(46, 50, 69));
+        RamQuickPill.BorderBrush = BrushDefaultBorder;
         RamLightningPath.Stroke = MediaBrushes.Transparent;
         UpdateRamPillState(animate: true);
     }
@@ -1625,26 +1848,21 @@ public partial class MainWindow : Window
             if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) &&
                 e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] files && files.Length > 0)
             {
-                int added = 0;
-                foreach (var path in files.Take(8))
+                AddFilesToShelf(files);
+                ShowToast("📎", $"На полке: {Math.Min(files.Length, 8)} файл(ов)", "Полка", () =>
                 {
-                    if (AddFileToDropShelf(path)) added++;
-                }
-                ShowToast("📎", $"На полку: +{added} ({_dropShelfItems.Count})", "Открыть", () => OpenTab("Utils"), durationMs: 3000);
+                    OpenTab("Apps");
+                }, durationMs: 2800);
             }
             else if (e.Data.GetDataPresent(System.Windows.DataFormats.UnicodeText) &&
-                     e.Data.GetData(System.Windows.DataFormats.UnicodeText) is string txt && !string.IsNullOrWhiteSpace(txt))
+                e.Data.GetData(System.Windows.DataFormats.UnicodeText) is string txt && !string.IsNullOrWhiteSpace(txt))
             {
                 var trimmed = txt.Trim();
-                _dropShelfItems.Insert(0, new DropShelfItem
+                ShowToast("📱", "Создать QR для текста?", "QR-код", () =>
                 {
-                    Name = trimmed.Length > 28 ? trimmed[..28] + "…" : trimmed,
-                    FullPath = trimmed,
-                    IsFile = false
-                });
-                while (_dropShelfItems.Count > 10) _dropShelfItems.RemoveAt(_dropShelfItems.Count - 1);
-                SyncDropShelfUi();
-                ShowToast("📝", "Текст закреплён на полке", "Открыть", () => OpenTab("Utils"), durationMs: 2500);
+                    OpenTab("Apps");
+                    ShowQrMenuWithText(trimmed, autoGenerate: true);
+                }, durationMs: 3600);
             }
         }
         catch { }
@@ -1820,7 +2038,11 @@ public partial class MainWindow : Window
             IslandBorder.ReleaseMouseCapture();
     }
 
-    private void CenterPosBtn_Click(object sender, RoutedEventArgs e) => ResetIslandCenter();
+    private void CenterPosBtn_Click(object sender, RoutedEventArgs e)
+    {
+        CloseHeaderActionsMenu();
+        ResetIslandCenter();
+    }
 
     private void ResetIslandCenter()
     {
@@ -2034,13 +2256,13 @@ public partial class MainWindow : Window
         if (fg != IntPtr.Zero && fg != _ownHwnd)
             _lastExternalHwnd = fg;
 
+        bool showingSleep = false;
         if (_countdownEndUtc.HasValue)
         {
             var left = _countdownEndUtc.Value - DateTime.UtcNow;
             if (left <= TimeSpan.Zero)
             {
                 _countdownEndUtc = null;
-                CompactTimerPill.Visibility = Visibility.Collapsed;
                 TimerStatusText.Text = "Выкл.";
                 System.Media.SystemSounds.Asterisk.Play();
                 if (_timerShutdownOnFinish)
@@ -2062,24 +2284,43 @@ public partial class MainWindow : Window
                 CompactTimerText.Text = $"🌙 {fmt}";
                 CompactTimerPill.Visibility = Visibility.Visible;
                 TimerStatusText.Text = fmt;
+                showingSleep = true;
             }
         }
 
-        if (_dndAutoOffEndUtc.HasValue)
+        if (_focusEndUtc.HasValue)
         {
-            var dndLeft = _dndAutoOffEndUtc.Value - DateTime.UtcNow;
-            if (dndLeft <= TimeSpan.Zero)
+            var focusLeft = _focusEndUtc.Value - DateTime.UtcNow;
+            if (focusLeft <= TimeSpan.Zero)
             {
-                _dndAutoOffEndUtc = null;
-                QuickToolsService.SetDoNotDisturbEnabled(false);
-                SyncQuickToolStates();
-                ShowToast("🔔", "Таймер «Не беспокоить» завершён", durationMs: 2600);
+                _focusEndUtc = null;
+                FocusTimerStatusText.Text = "Время вышло · сделайте перерыв!";
+                StopFocusTimerBtn.Visibility = Visibility.Collapsed;
+                if (!showingSleep) CompactTimerPill.Visibility = Visibility.Collapsed;
+                AddNotification("🍅", "Фокус-таймер", "Сессия завершена!", "Самое время немного отдохнуть");
+                FlashIslandBorder(MediaColor.FromRgb(234, 88, 12));
+                ShowToast("🍅", "Фокус-таймер завершён — сделайте перерыв!", durationMs: 4200);
             }
-            else if (_isExpanded && TabSystem.IsChecked == true)
+            else
             {
-                string dFmt = dndLeft.TotalHours >= 1 ? dndLeft.ToString(@"h\:mm\:ss") : dndLeft.ToString(@"mm\:ss");
-                DndLabelText.Text = $"Вкл · {dFmt}";
+                string fFmt = focusLeft.TotalHours >= 1 ? focusLeft.ToString(@"h\:mm\:ss") : focusLeft.ToString(@"mm\:ss");
+                FocusTimerStatusText.Text = $"Осталось {fFmt}";
+                if (!showingSleep)
+                {
+                    CompactTimerText.Text = $"🍅 {fFmt}";
+                    CompactTimerPill.Visibility = Visibility.Visible;
+                }
             }
+        }
+        else if (!showingSleep && CompactTimerPill.Visibility == Visibility.Visible)
+        {
+            CompactTimerPill.Visibility = Visibility.Collapsed;
+        }
+
+        if (_isExpanded && _isLyricsOpen && _isMediaPlaying && TabRemote.IsChecked == true)
+        {
+            _lastMediaPositionSec += 1.0;
+            UpdateSyncedLyricsHighlight(_lastMediaPositionSec);
         }
 
         if (_screenRecorder.IsRecording)
@@ -2309,19 +2550,57 @@ public partial class MainWindow : Window
         {
             var fgHwnd = GetForegroundWindow();
             bool skipContextUpdate = fgHwnd == _ownHwnd || _isWindowDragging || _isExpanded;
-            bool gameChanged = false;
-            bool videoChanged = false;
+            bool isExpanded = _isExpanded;
+            bool onSystemTab = isExpanded && TabSystem.IsChecked == true;
+            bool onAppsTab = isExpanded && TabApps.IsChecked == true;
+            bool onScreenTimeTab = isExpanded && TabScreenTime.IsChecked == true;
+            bool onRemoteTab = isExpanded && TabRemote.IsChecked == true;
+            bool isProcessesOpen = onSystemTab && _isSysProcessesExpanded;
+            bool pollDiscord = onSystemTab || (onAppsTab && (DateTime.UtcNow - _lastDiscordPollAt).TotalSeconds >= 3);
+            bool needNetworkSample = _settings.EnableNetworkMonitor || onSystemTab;
+            bool isMediaPlaying = _isMediaPlaying;
+            bool streamPrivacyAuto = _settings.StreamPrivacyAuto;
+            bool showGpuTemp = _settings.GameShowGpuTemp;
+            bool initialFullscreenGame = _isInFullscreenGame;
+            bool initialFullscreenVideo = _isInFullscreenVideo;
+            int ownPid = Environment.ProcessId;
+
+            var snap = await Task.Run(() =>
+            {
+                bool fgGame = initialFullscreenGame;
+                bool fgVideo = initialFullscreenVideo;
+                if (!skipContextUpdate)
+                {
+                    var fgContext = PrivacyAndGameService.DetectFullscreenContext(isMediaPlaying, ownPid);
+                    fgGame = fgContext.IsFullscreenGame;
+                    fgVideo = fgContext.IsFullscreenVideo;
+                }
+
+                bool includeGpu = showGpuTemp && (fgGame || onSystemTab);
+                bool sampleFps = fgGame || onSystemTab;
+                var metrics = _sysMonitor.SampleSystemAndNetwork(includeGpu, needNetworkSample, sampleFps);
+
+                string? activeMic = CoreAudioService.GetActiveCaptureProcessName();
+                var privacy = PrivacyAndGameService.GetActiveMicAndCamera(activeMic, usePreSampled: true);
+                bool autoRec = streamPrivacyAuto && HardwareAndUtilityService.IsRecordingSoftwareActive();
+                var pads = HardwareAndUtilityService.GetConnectedGamepads();
+                var discord = pollDiscord
+                    ? HardwareAndUtilityService.GetDiscordVoiceStatus(activeMic, usePreSampled: true)
+                    : default;
+                var topProcs = isProcessesOpen ? _sysMonitor.GetTopProcesses(3) : null;
+
+                return (fgGame, fgVideo, metrics, privacy, autoRec, pads, discord, topProcs);
+            });
+
+            bool gameChanged = !skipContextUpdate && (_isInFullscreenGame != snap.fgGame);
+            bool videoChanged = !skipContextUpdate && (_isInFullscreenVideo != snap.fgVideo);
             if (!skipContextUpdate)
             {
-                var fgContext = PrivacyAndGameService.DetectFullscreenContext(_isMediaPlaying, Environment.ProcessId);
-                gameChanged = _isInFullscreenGame != fgContext.IsFullscreenGame;
-                videoChanged = _isInFullscreenVideo != fgContext.IsFullscreenVideo;
-                _isInFullscreenGame = fgContext.IsFullscreenGame;
-                _isInFullscreenVideo = fgContext.IsFullscreenVideo;
+                _isInFullscreenGame = snap.fgGame;
+                _isInFullscreenVideo = snap.fgVideo;
             }
-            bool includeGpu = _settings.GameShowGpuTemp &&
-                              (_isInFullscreenGame || (_isExpanded && TabSystem.IsChecked == true));
-            var metrics = await Task.Run(() => _sysMonitor.SampleSystemAndNetwork(includeGpu));
+            var metrics = snap.metrics;
+            _latestMetrics = metrics;
 
             // Switch per-process island dock position when entering/leaving games or processes with saved layouts
             bool profileChanged = false;
@@ -2355,6 +2634,7 @@ public partial class MainWindow : Window
                 UpdateMicPillState(animate: false);
                 UpdateReplayPillState(animate: false);
                 PositionTopCenter();
+                SyncMagnetTimerState();
             }
 
             if (gameChanged)
@@ -2428,28 +2708,29 @@ public partial class MainWindow : Window
             if (_settings.CompactShowPing || _isExpanded || _isInFullscreenGame)
                 _ = _sysMonitor.SamplePingAsync(metrics.ActivePid, _isInFullscreenGame);
 
-            var privacy = await Task.Run(PrivacyAndGameService.GetActiveMicAndCamera);
-            UpdatePrivacyVisuals(privacy);
+            UpdatePrivacyVisuals(snap.privacy);
             SyncMicMuteUi();
 
-            bool autoRec = _settings.StreamPrivacyAuto && await Task.Run(HardwareAndUtilityService.IsRecordingSoftwareActive);
-            _isStreamPrivacyActive = _isStreamPrivacyManual || autoRec;
+            _isStreamPrivacyActive = _isStreamPrivacyManual || snap.autoRec;
             StreamRecBadge.Visibility = (_isStreamPrivacyActive && !_isSuperMiniIdle) ? Visibility.Visible : Visibility.Collapsed;
 
             // Sample connected XInput gamepads for wireless connect & low battery toast
-            var pads = await Task.Run(HardwareAndUtilityService.GetConnectedGamepads);
-            var padIds = pads.Select(p => p.Index).ToHashSet();
-            foreach (var p in pads)
+            var pads = snap.pads;
+            if (pads.Count > 0 || _knownGamepads.Count > 0)
             {
-                if (_knownGamepads.Add(p.Index))
-                    ShowToast("🎮", p.IsWired ? $"Геймпад #{p.Index} подключен" : $"Геймпад #{p.Index} · 🔋 {p.BatteryPercent}%", durationMs: 2800);
-                if (!p.IsWired && p.BatteryPercent <= 20 && _lowBatteryGamepads.Add(p.Index))
-                    ShowToast("🪫", $"Геймпад #{p.Index}: низкий заряд ({p.BatteryPercent}%)", durationMs: 3600);
-                else if (p.BatteryPercent > 30)
-                    _lowBatteryGamepads.Remove(p.Index);
+                var padIds = pads.Select(p => p.Index).ToHashSet();
+                foreach (var p in pads)
+                {
+                    if (_knownGamepads.Add(p.Index))
+                        ShowToast("🎮", p.IsWired ? $"Геймпад #{p.Index} подключен" : $"Геймпад #{p.Index} · 🔋 {p.BatteryPercent}%", durationMs: 2800);
+                    if (!p.IsWired && p.BatteryPercent <= 20 && _lowBatteryGamepads.Add(p.Index))
+                        ShowToast("🪫", $"Геймпад #{p.Index}: низкий заряд ({p.BatteryPercent}%)", durationMs: 3600);
+                    else if (p.BatteryPercent > 30)
+                        _lowBatteryGamepads.Remove(p.Index);
+                }
+                foreach (var old in _knownGamepads.Where(k => !padIds.Contains(k)).ToList())
+                    _knownGamepads.Remove(old);
             }
-            foreach (var old in _knownGamepads.Where(k => !padIds.Contains(k)).ToList())
-                _knownGamepads.Remove(old);
 
             if (_settings.EnableSystemMonitor)
             {
@@ -2480,35 +2761,38 @@ public partial class MainWindow : Window
                     {
                         int fpsInt = (int)Math.Round(metrics.ActiveFps);
                         CompactFpsText.Text = $"{fpsInt} FPS";
-                        SideFpsText.Text = $"{fpsInt} FPS";
-                        var fpsColor = fpsInt > 60
-                            ? new SolidColorBrush(MediaColor.FromRgb(74, 222, 128))   // Green (>60)
-                            : new SolidColorBrush(MediaColor.FromRgb(248, 113, 113)); // Red (<=60)
+                        var fpsColor = fpsInt > 60 ? BrushFpsGood : BrushFpsWarn;
                         CompactFpsText.Foreground = fpsColor;
-                        SideFpsText.Foreground = fpsColor;
-                        FpsDetailText.Foreground = fpsColor;
                         CompactFpsText.ToolTip = "Игровой режим (ховер отключён, клик открывает). ETW FPS игры";
-                        FpsDetailText.Text = string.IsNullOrEmpty(metrics.ActiveWindowTitle)
-                            ? $"{fpsInt} FPS"
-                            : $"{fpsInt} FPS · {metrics.ActiveWindowTitle}";
+                        if (onSystemTab || IsSideDocked)
+                        {
+                            SideFpsText.Text = $"{fpsInt} FPS";
+                            SideFpsText.Foreground = fpsColor;
+                            FpsDetailText.Foreground = fpsColor;
+                            FpsDetailText.Text = string.IsNullOrEmpty(metrics.ActiveWindowTitle)
+                                ? $"{fpsInt} FPS"
+                                : $"{fpsInt} FPS · {metrics.ActiveWindowTitle}";
+                        }
                     }
                     else
                     {
                         CompactFpsText.Text = "— FPS";
-                        SideFpsText.Text = "— FPS";
-                        var warnCol = new SolidColorBrush(MediaColor.FromRgb(248, 113, 113));
-                        CompactFpsText.Foreground = warnCol;
-                        SideFpsText.Foreground = warnCol;
-                        FpsDetailText.Foreground = warnCol;
+                        CompactFpsText.Foreground = BrushFpsWarn;
                         CompactFpsText.ToolTip = "Для показа точного FPS игр запустите Enable_Game_FPS_Access.bat с правами Админа";
-                        FpsDetailText.Text = string.IsNullOrEmpty(metrics.ActiveWindowTitle)
-                            ? "Нет прав ETW"
-                            : $"Нет прав ETW · {metrics.ActiveWindowTitle}";
+                        if (onSystemTab || IsSideDocked)
+                        {
+                            SideFpsText.Text = "— FPS";
+                            SideFpsText.Foreground = BrushFpsWarn;
+                            FpsDetailText.Foreground = BrushFpsWarn;
+                            FpsDetailText.Text = string.IsNullOrEmpty(metrics.ActiveWindowTitle)
+                                ? "Нет прав ETW"
+                                : $"Нет прав ETW · {metrics.ActiveWindowTitle}";
+                        }
                     }
                 }
-                else
+                else if (onSystemTab)
                 {
-                    FpsDetailText.Foreground = new SolidColorBrush(MediaColor.FromRgb(142, 144, 153));
+                    FpsDetailText.Foreground = BrushFpsIdle;
                     FpsDetailText.Text = string.IsNullOrEmpty(metrics.ActiveWindowTitle)
                         ? $"{metrics.ActiveFps:F0} FPS"
                         : $"{metrics.ActiveFps:F0} FPS · {metrics.ActiveWindowTitle}";
@@ -2516,39 +2800,33 @@ public partial class MainWindow : Window
 
                 CompactFpsText.Visibility = (inGame && _settings.CompactShowFps && !_isSuperMiniIdle)
                     ? Visibility.Visible : Visibility.Collapsed;
-                SideFpsText.Visibility = (_settings.CompactShowFps && inGame) ? Visibility.Visible : Visibility.Collapsed;
+                if (IsSideDocked)
+                    SideFpsText.Visibility = (_settings.CompactShowFps && inGame) ? Visibility.Visible : Visibility.Collapsed;
 
                 bool highCpu = metrics.CpuPercent >= 75;
                 bool highRam = metrics.RamPercent >= 80;
                 bool highGpu = metrics.GpuPercent.HasValue && metrics.GpuPercent.Value >= 80;
                 bool highTemp = metrics.GpuTempC.HasValue && metrics.GpuTempC.Value >= 85;
-                var highBlue = new SolidColorBrush(MediaColor.FromRgb(56, 189, 248));
-                var hotCol = new SolidColorBrush(MediaColor.FromRgb(248, 113, 113));
-                var normalCompactCol = new SolidColorBrush(MediaColor.FromRgb(203, 213, 225));
-                var normalCardCol = new SolidColorBrush(MediaColor.FromRgb(244, 244, 245));
 
                 if (inGame && _settings.CompactShowCpuRam)
                 {
                     CpuValRun.Text = $"{metrics.CpuPercent:F0}%";
-                    CpuValRun.Foreground = highCpu ? highBlue : normalCardCol;
+                    CpuValRun.Foreground = highCpu ? BrushMetricHighBlue : BrushMetricNormalCard;
 
                     if (metrics.GpuPercent.HasValue)
                     {
                         GpuSepRun.Text = " · ";
                         GpuLabelRun.Text = "GPU ";
                         GpuValRun.Text = $"{metrics.GpuPercent.Value:F0}%";
-                        GpuValRun.Foreground = highGpu ? highBlue : new SolidColorBrush(MediaColor.FromRgb(125, 211, 252));
+                        GpuValRun.Foreground = highGpu ? BrushMetricHighBlue : BrushGpuCyan;
 
                         if (metrics.GpuTempC.HasValue)
                         {
                             double tc = metrics.GpuTempC.Value;
                             GpuTempRun.Text = $" {tc:F0}°";
-                            var tColor = tc >= 85
-                                ? MediaColor.FromRgb(248, 113, 113)  // Red >= 85
-                                : tc >= 70
-                                    ? MediaColor.FromRgb(251, 191, 36) // Amber 70-84
-                                    : MediaColor.FromRgb(74, 222, 128); // Green < 70
-                            GpuTempRun.Foreground = new SolidColorBrush(tColor);
+                            GpuTempRun.Foreground = tc >= 85
+                                ? BrushMetricHot
+                                : tc >= 70 ? BrushTempWarm : BrushFpsGood;
                         }
                         else GpuTempRun.Text = "";
                     }
@@ -2571,10 +2849,13 @@ public partial class MainWindow : Window
                 }
 
                 bool heavyLoad = highCpu || highRam || highGpu;
-                var sysCol = highTemp ? hotCol : (heavyLoad ? highBlue : normalCompactCol);
-                SideSysText.Text = $"CPU {metrics.CpuPercent:F0}%\nRAM {metrics.RamPercent:F0}%";
-                SideSysText.Foreground = sysCol;
-                SideSysText.Visibility = _settings.CompactShowCpuRam ? Visibility.Visible : Visibility.Collapsed;
+                if (IsSideDocked)
+                {
+                    var sysCol = highTemp ? BrushMetricHot : (heavyLoad ? BrushMetricHighBlue : BrushMetricNormalCompact);
+                    SideSysText.Text = $"CPU {metrics.CpuPercent:F0}%\nRAM {metrics.RamPercent:F0}%";
+                    SideSysText.Foreground = sysCol;
+                    SideSysText.Visibility = _settings.CompactShowCpuRam ? Visibility.Visible : Visibility.Collapsed;
+                }
 
                 // Animated load bar & perimeter pulse glow in game mode
                 double peakLoad = Math.Max(metrics.CpuPercent, metrics.GpuPercent ?? 0.0);
@@ -2583,30 +2864,29 @@ public partial class MainWindow : Window
                     CompactLoadBarHost.Visibility = Visibility.Visible;
                     double barMaxW = Math.Max(40.0, IslandBorder.Width - 36.0);
                     CompactLoadBarFill.Width = Math.Clamp(peakLoad / 100.0, 0.05, 1.0) * barMaxW;
-                    MediaColor barCol = (highTemp || peakLoad >= 85)
-                        ? MediaColor.FromRgb(248, 113, 113)
-                        : peakLoad >= 65
-                            ? MediaColor.FromRgb(251, 191, 36)
-                            : MediaColor.FromRgb(74, 222, 128);
-                    CompactLoadBarFill.Background = new SolidColorBrush(barCol);
+                    CompactLoadBarFill.Background = (highTemp || peakLoad >= 85)
+                        ? BrushMetricHot
+                        : peakLoad >= 65 ? BrushTempWarm : BrushFpsGood;
                 }
                 else
                 {
                     CompactLoadBarHost.Visibility = Visibility.Collapsed;
                 }
 
-                // Breathing border glow on heavy load or overheating
+                // Breathing border glow on heavy load or overheating (zero Brush allocation)
                 if (!_isBorderAlertActive && !_screenRecorder.IsRecording && !(_isInFullscreenGame && _settings.GameModeAutoProfile && _isAltHeldInGame))
                 {
                     if (highTemp || peakLoad >= 75)
                     {
                         _pulsePhase += 0.9;
                         byte a = (byte)Math.Round(115 + 100 * Math.Sin(_pulsePhase));
-                        IslandBorder.BorderBrush = highTemp
-                            ? new SolidColorBrush(MediaColor.FromArgb(a, 248, 113, 113))
-                            : new SolidColorBrush(MediaColor.FromArgb(a, 56, 189, 248));
+                        _dynamicBorderGlowBrush.Color = highTemp
+                            ? MediaColor.FromArgb(a, 248, 113, 113)
+                            : MediaColor.FromArgb(a, 56, 189, 248);
+                        if (!ReferenceEquals(IslandBorder.BorderBrush, _dynamicBorderGlowBrush))
+                            IslandBorder.BorderBrush = _dynamicBorderGlowBrush;
                     }
-                    else
+                    else if (!(_isMediaPlaying && ShouldShowFullMusicMode))
                     {
                         ApplyCurrentIslandBorder();
                     }
@@ -2616,23 +2896,23 @@ public partial class MainWindow : Window
                 {
                     CompactPingText.Text = $"{metrics.PingMs}ms";
                     CompactPingText.ToolTip = _sysMonitor.PingTargetLabel;
-                    SidePingText.Text = $"{metrics.PingMs}ms";
-                    SidePingText.ToolTip = _sysMonitor.PingTargetLabel;
-                    var pingColor = metrics.PingMs < 60
-                        ? MediaColor.FromRgb(74, 222, 128)
-                        : metrics.PingMs < 110
-                            ? MediaColor.FromRgb(250, 204, 21)
-                            : MediaColor.FromRgb(248, 113, 113);
-                    var pingBrush = new SolidColorBrush(pingColor);
+                    var pingBrush = metrics.PingMs < 60
+                        ? BrushFpsGood
+                        : metrics.PingMs < 110 ? BrushPingYellow : BrushMetricHot;
                     CompactPingText.Foreground = pingBrush;
-                    SidePingText.Foreground = pingBrush;
                     CompactPingText.Visibility = _isSuperMiniIdle ? Visibility.Collapsed : Visibility.Visible;
-                    SidePingText.Visibility = Visibility.Visible;
+                    if (IsSideDocked)
+                    {
+                        SidePingText.Text = $"{metrics.PingMs}ms";
+                        SidePingText.ToolTip = _sysMonitor.PingTargetLabel;
+                        SidePingText.Foreground = pingBrush;
+                        SidePingText.Visibility = Visibility.Visible;
+                    }
                 }
                 else
                 {
                     CompactPingText.Visibility = Visibility.Collapsed;
-                    SidePingText.Visibility = Visibility.Collapsed;
+                    if (IsSideDocked) SidePingText.Visibility = Visibility.Collapsed;
                 }
 
                 bool anyMetric = !_isSuperMiniIdle &&
@@ -2641,11 +2921,12 @@ public partial class MainWindow : Window
                                   CompactPingText.Visibility == Visibility.Visible);
                 CompactSep1.Visibility = anyMetric ? Visibility.Visible : Visibility.Collapsed;
 
-                // Sparkline history buffers (30s rolling window)
+                // Sparkline history buffers (30s rolling window); only redraw canvas while System tab is visible
                 PushSparklineSample(_cpuHistory, metrics.CpuPercent);
                 PushSparklineSample(_gpuHistory, metrics.GpuPercent ?? 0.0);
                 PushSparklineSample(_ramHistory, metrics.RamPercent);
-                UpdateSparklinesUi();
+                if (onSystemTab)
+                    UpdateSparklinesUi();
 
                 // Overheating alert (>= 86°C, 3-minute cooldown)
                 if (metrics.GpuTempC.HasValue && metrics.GpuTempC.Value >= 86 &&
@@ -2656,36 +2937,36 @@ public partial class MainWindow : Window
                     ShowToast("🔥", $"Перегрев GPU: {metrics.GpuTempC.Value:F0}°C!", durationMs: 4200);
                 }
 
-                CpuValText.Text = $"{metrics.CpuPercent:F0}%";
-                CpuValText.Foreground = highCpu ? highBlue : normalCardCol;
-                CpuLoadBarFill.Width = Math.Clamp(metrics.CpuPercent / 100.0, 0.03, 1.0) * 124.0;
-
-                RamValText.Text = $"{metrics.RamPercent:F0}%";
-                RamValText.Foreground = highRam ? highBlue : normalCardCol;
-                RamSubText.Text = $"{metrics.RamUsedGb:F1} / {metrics.RamTotalGb:F1} ГБ";
-                RamLoadBarFill.Width = Math.Clamp(metrics.RamPercent / 100.0, 0.03, 1.0) * 124.0;
-
-                SysGpuNameText.Text = HardwareAndUtilityService.GetPrimaryGpuName();
-                if (metrics.GpuPercent.HasValue)
+                if (onSystemTab)
                 {
-                    GpuCardValText.Text = $"{metrics.GpuPercent.Value:F0}%";
-                    GpuCardValText.Foreground = highTemp ? hotCol : normalCardCol;
-                    GpuDetailText.Text = metrics.GpuTempC.HasValue ? $"Темп. {metrics.GpuTempC.Value:F0}°C" : "Активна";
-                    GpuDetailText.Foreground = highTemp ? hotCol : new SolidColorBrush(MediaColor.FromRgb(142, 144, 153));
-                    GpuLoadBarFill.Width = Math.Clamp(metrics.GpuPercent.Value / 100.0, 0.03, 1.0) * 124.0;
-                    GpuLoadBarFill.Background = new SolidColorBrush(highTemp
-                        ? MediaColor.FromRgb(248, 113, 113)
-                        : MediaColor.FromRgb(192, 132, 252));
-                }
-                else
-                {
-                    GpuCardValText.Text = "—%";
-                    GpuDetailText.Text = "Ожидание";
-                    GpuLoadBarFill.Width = 0;
-                }
+                    CpuValText.Text = $"{metrics.CpuPercent:F0}%";
+                    CpuValText.Foreground = highCpu ? BrushMetricHighBlue : BrushMetricNormalCard;
+                    CpuLoadBarFill.Width = Math.Clamp(metrics.CpuPercent / 100.0, 0.03, 1.0) * 124.0;
 
-                if (_isExpanded && TabSystem.IsChecked == true)
-                    RefreshSystemControlCenterUi(pads);
+                    RamValText.Text = $"{metrics.RamPercent:F0}%";
+                    RamValText.Foreground = highRam ? BrushMetricHighBlue : BrushMetricNormalCard;
+                    RamSubText.Text = $"{metrics.RamUsedGb:F1} / {metrics.RamTotalGb:F1} ГБ";
+                    RamLoadBarFill.Width = Math.Clamp(metrics.RamPercent / 100.0, 0.03, 1.0) * 124.0;
+
+                    SysGpuNameText.Text = HardwareAndUtilityService.GetPrimaryGpuName();
+                    if (metrics.GpuPercent.HasValue)
+                    {
+                        GpuCardValText.Text = $"{metrics.GpuPercent.Value:F0}%";
+                        GpuCardValText.Foreground = highTemp ? BrushMetricHot : BrushMetricNormalCard;
+                        GpuDetailText.Text = metrics.GpuTempC.HasValue ? $"Темп. {metrics.GpuTempC.Value:F0}°C" : "Активна";
+                        GpuDetailText.Foreground = highTemp ? BrushMetricHot : BrushFpsIdle;
+                        GpuLoadBarFill.Width = Math.Clamp(metrics.GpuPercent.Value / 100.0, 0.03, 1.0) * 124.0;
+                        GpuLoadBarFill.Background = highTemp ? BrushMetricHot : BrushGpuBarPurple;
+                    }
+                    else
+                    {
+                        GpuCardValText.Text = "—%";
+                        GpuDetailText.Text = "Ожидание";
+                        GpuLoadBarFill.Width = 0;
+                    }
+
+                    RefreshSystemControlCenterUi(pads, snap.discord);
+                }
 
                 // Soft perimeter flash alert on FPS drop or Ping spike during gameplay
                 if (_isInFullscreenGame && _settings.GameModeAutoProfile &&
@@ -2708,13 +2989,16 @@ public partial class MainWindow : Window
 
             if (_settings.EnableNetworkMonitor)
             {
-                var down = SystemMonitorService.FormatSpeed(metrics.NetDownBytesPerSec);
-                var up = SystemMonitorService.FormatSpeed(metrics.NetUpBytesPerSec);
-                NetDownText.Text = $"↓ {down}";
-                NetUpText.Text = $"↑ {up}";
-                PingHeaderLabel.Text = metrics.PingMs >= 25
-                    ? (_sysMonitor.IsGameServerPing ? $"Сеть · Игр. ping {metrics.PingMs}мс" : $"Сеть · Ping {metrics.PingMs}мс")
-                    : "Сеть";
+                if (onSystemTab)
+                {
+                    var down = SystemMonitorService.FormatSpeed(metrics.NetDownBytesPerSec);
+                    var up = SystemMonitorService.FormatSpeed(metrics.NetUpBytesPerSec);
+                    NetDownText.Text = $"↓ {down}";
+                    NetUpText.Text = $"↑ {up}";
+                    PingHeaderLabel.Text = metrics.PingMs >= 25
+                        ? (_sysMonitor.IsGameServerPing ? $"Игр. {metrics.PingMs}мс" : $"Ping {metrics.PingMs}мс")
+                        : "Ping —";
+                }
 
                 PushSparklineSample(_netHistory, Math.Min(100, metrics.NetDownBytesPerSec / (1024.0 * 1024.0) * 5.0));
 
@@ -2743,34 +3027,49 @@ public partial class MainWindow : Window
                 }
             }
 
-            if (_settings.AutoOptimizeRamOnThreshold &&
-                !_isOptimizingRam &&
-                metrics.RamPercent >= _settings.RamThresholdPercent &&
-                (DateTime.UtcNow - _lastAutoRamAt).TotalSeconds >= 60)
+            if (_settings.AutoOptimizeRamOnThreshold && !_isOptimizingRam && !_isInFullscreenGame)
             {
-                _lastAutoRamAt = DateTime.UtcNow;
-                _ = RunOptimizeMemoryAsync(isAuto: true);
+                int threshold = Math.Clamp(_settings.RamThresholdPercent, 60, 95);
+                bool hitThreshold = metrics.RamPercent >= threshold &&
+                    (_lastAutoRamAt == DateTime.MinValue || (DateTime.UtcNow - _lastAutoRamAt).TotalSeconds >= 180);
+                bool hitPeriodic = metrics.RamPercent >= 55 &&
+                    (DateTime.UtcNow - _lastPeriodicRamAt).TotalMinutes >= 20 &&
+                    (_lastAutoRamAt == DateTime.MinValue || (DateTime.UtcNow - _lastAutoRamAt).TotalMinutes >= 10);
+
+                if (hitThreshold || hitPeriodic)
+                {
+                    _lastAutoRamAt = DateTime.UtcNow;
+                    _lastPeriodicRamAt = DateTime.UtcNow;
+                    _ = RunOptimizeMemoryAsync(isAuto: true, silentIfSmall: !hitThreshold);
+                }
             }
 
-            if (_isExpanded && TabSystem.IsChecked == true)
+            if (onAppsTab && pollDiscord)
             {
-                var procs = await Task.Run(() => _sysMonitor.GetTopProcesses(3));
-                _topProcesses.Clear();
-                foreach (var p in procs) _topProcesses.Add(p);
+                _lastDiscordPollAt = DateTime.UtcNow;
+                SyncDiscordUiState(snap.discord);
+            }
 
-                var dl = await Task.Run(() => _sysMonitor.GetRecentDownloads(4));
-                _recentDownloads.Clear();
-                foreach (var f in dl) _recentDownloads.Add(f);
-
+            if (onSystemTab)
+            {
+                if (snap.topProcs != null)
+                {
+                    _topProcesses.Clear();
+                    foreach (var p in snap.topProcs) _topProcesses.Add(p);
+                }
                 ScheduleExpandedResize(animate: true);
             }
-            else if (_isExpanded && TabScreenTime.IsChecked == true)
+            else if (onScreenTimeTab)
             {
                 RefreshScreenTimeUi();
                 ScheduleExpandedResize(animate: true);
             }
+            else if (_isExpanded && TabCleaner.IsChecked == true)
+            {
+                UpdateCleanerRamUi(metrics);
+            }
 
-            await RefreshMediaAndDevicesAsync(forceBluetooth: (_isExpanded && TabRemote.IsChecked == true));
+            await RefreshMediaAndDevicesAsync(forceBluetooth: onRemoteTab);
 
             if (!_isExpanded && CompactToastStrip.Visibility != Visibility.Visible)
                 UpdateCompactWidth(animate: false);
@@ -2779,6 +3078,32 @@ public partial class MainWindow : Window
         {
             LoggerService.Error("Monitor tick error", ex);
         }
+    }
+
+    private void StartFocusTimer_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && int.TryParse(fe.Tag?.ToString(), out int mins) && mins > 0)
+        {
+            _focusEndUtc = DateTime.UtcNow.AddMinutes(mins);
+            FocusTimerStatusText.Text = $"Осталось {mins:D2}:00";
+            if (!_countdownEndUtc.HasValue)
+            {
+                CompactTimerText.Text = $"🍅 {mins:D2}:00";
+                CompactTimerPill.Visibility = Visibility.Visible;
+            }
+            StopFocusTimerBtn.Visibility = Visibility.Visible;
+            ShowToast("🍅", $"Фокус-таймер на {mins} мин запущен", durationMs: 2400);
+        }
+    }
+
+    private void StopFocusTimer_Click(object sender, RoutedEventArgs e)
+    {
+        _focusEndUtc = null;
+        FocusTimerStatusText.Text = "Напоминание о перерыве выкл.";
+        StopFocusTimerBtn.Visibility = Visibility.Collapsed;
+        if (!_countdownEndUtc.HasValue)
+            CompactTimerPill.Visibility = Visibility.Collapsed;
+        ShowToast("🍅", "Фокус-таймер остановлен", durationMs: 1800);
     }
 
     private void ResetScreenTime_Click(object sender, RoutedEventArgs e)
@@ -2873,11 +3198,21 @@ public partial class MainWindow : Window
     {
         var total = DateTime.UtcNow - _islandSessionStartUtc;
         ScreenTimeTotalText.Text = FormatDurationShort(total);
-        ScreenTimeAppsCountText.Text = $"Программ: {_screenTimeStats.Count}";
+        ScreenTimeAppsCountText.Text = $"{_screenTimeStats.Count}";
 
         var allGames = _screenTimeStats.Where(kv => kv.Value.IsGame).ToList();
         double gamesSec = allGames.Sum(kv => kv.Value.Seconds);
+        double appsSec = Math.Max(0, _screenTimeStats.Where(kv => !kv.Value.IsGame).Sum(kv => kv.Value.Seconds));
         ScreenTimeGamesTotalText.Text = FormatDurationShort(TimeSpan.FromSeconds(gamesSec));
+
+        double totalTracked = Math.Max(1.0, gamesSec + appsSec);
+        ScreenTimeGamesBarCol.Width = new GridLength(Math.Max(0.0, gamesSec / totalTracked), GridUnitType.Star);
+        ScreenTimeAppsBarCol.Width = new GridLength(Math.Max(0.05, appsSec / totalTracked), GridUnitType.Star);
+
+        var latestApp = _screenTimeStats.OrderByDescending(kv => kv.Value.Seconds).FirstOrDefault();
+        ScreenTimeNowAppText.Text = !string.IsNullOrEmpty(_lastCompactGameExePath) && _isInFullscreenGame
+            ? $"Игра: {IOPath.GetFileNameWithoutExtension(_lastCompactGameExePath)}"
+            : (!string.IsNullOrEmpty(latestApp.Key) ? latestApp.Key : "Онлайн");
 
         var topGame = allGames
             .OrderByDescending(kv => kv.Value.Seconds)
@@ -3041,6 +3376,7 @@ public partial class MainWindow : Window
             string cond = !string.IsNullOrWhiteSpace(w.RainAlertText) ? w.RainAlertText : w.ConditionText;
             HomeWeatherSubText.Text = string.IsNullOrWhiteSpace(w.City) ? cond : $"{w.ConditionText} · {w.City}";
             ApplyWeatherVectorState(w.WmoCode);
+            SyncWeatherForecastUi(w);
 
             if (!string.IsNullOrWhiteSpace(w.RainAlertText) &&
                 (DateTime.UtcNow - _lastRainAlertAt).TotalMinutes >= 60)
@@ -3142,38 +3478,40 @@ public partial class MainWindow : Window
         CompactEqPanel.Visibility = (_settings.CompactShowMedia && _isMediaPlaying && !_isSuperMiniIdle)
             ? Visibility.Visible : Visibility.Collapsed;
 
-        // Apply SMTC album/video thumbnail to spinning Music Orb and Hero Card
-        if (track.Thumbnail != null && !_isStreamPrivacyActive)
+        // Apply SMTC album/video thumbnail only when changed (or privacy changes)
+        var effectiveThumb = !_isStreamPrivacyActive ? track.Thumbnail : null;
+        bool thumbChanged = !ReferenceEquals(_lastAppliedThumbRef, effectiveThumb);
+        if (effectiveThumb != null)
         {
-            MusicThumbBrush.ImageSource = track.Thumbnail;
+            if (thumbChanged || MusicThumbBrush.ImageSource == null)
+            {
+                _lastAppliedThumbRef = effectiveThumb;
+                MusicThumbBrush.ImageSource = effectiveThumb;
+                MediaCardThumbImg.Source = effectiveThumb;
+                HomeMediaThumbImg.Source = effectiveThumb;
+            }
             MusicThumbCircle.Visibility = Visibility.Visible;
             MusicStatusDot.Visibility = Visibility.Collapsed;
-            MediaCardThumbImg.Source = track.Thumbnail;
-            MediaCardThumbImg.Visibility = Visibility.Visible;
-            MediaCardFallbackIcon.Visibility = Visibility.Collapsed;
-            HomeMediaThumbImg.Source = track.Thumbnail;
-            HomeMediaThumbImg.Visibility = Visibility.Visible;
-            HomeMediaFallbackNote.Visibility = Visibility.Collapsed;
+            if (_isExpanded)
+            {
+                MediaCardThumbImg.Visibility = Visibility.Visible;
+                MediaCardFallbackIcon.Visibility = Visibility.Collapsed;
+                HomeMediaThumbImg.Visibility = Visibility.Visible;
+                HomeMediaFallbackNote.Visibility = Visibility.Collapsed;
+            }
         }
         else
         {
+            _lastAppliedThumbRef = null;
             MusicThumbCircle.Visibility = Visibility.Collapsed;
             MusicStatusDot.Visibility = Visibility.Visible;
-            MediaCardThumbImg.Visibility = Visibility.Collapsed;
-            MediaCardFallbackIcon.Visibility = Visibility.Visible;
-            HomeMediaThumbImg.Visibility = Visibility.Collapsed;
-            HomeMediaFallbackNote.Visibility = Visibility.Visible;
-        }
-
-        // Dynamic Hero Glow from Album Dominant Color
-        if (_isMediaPlaying && track.DominantColor.HasValue && !_isStreamPrivacyActive)
-        {
-            var dc = track.DominantColor.Value;
-            MediaHeroGlowStop.Color = MediaColor.FromArgb(62, dc.R, dc.G, dc.B);
-        }
-        else
-        {
-            MediaHeroGlowStop.Color = MediaColor.FromArgb(24, 56, 189, 248);
+            if (_isExpanded)
+            {
+                MediaCardThumbImg.Visibility = Visibility.Collapsed;
+                MediaCardFallbackIcon.Visibility = Visibility.Visible;
+                HomeMediaThumbImg.Visibility = Visibility.Collapsed;
+                HomeMediaFallbackNote.Visibility = Visibility.Visible;
+            }
         }
 
         // Track change subtle banner (when playing and Privacy Shield is off)
@@ -3200,9 +3538,9 @@ public partial class MainWindow : Window
         }
 
         if (track.SourceLabel.Contains("Spotify", StringComparison.OrdinalIgnoreCase))
-            MusicStatusDot.Fill = new SolidColorBrush(MediaColor.FromRgb(30, 215, 96));
+            MusicStatusDot.Fill = BrushSpotifyGreen;
         else if (track.SourceLabel.Contains("SoundCloud", StringComparison.OrdinalIgnoreCase))
-            MusicStatusDot.Fill = new SolidColorBrush(MediaColor.FromRgb(255, 119, 0));
+            MusicStatusDot.Fill = BrushSoundCloudOrange;
         else
             MusicStatusDot.SetResourceReference(Shape.FillProperty, "AccentBrightBrush");
 
@@ -3215,6 +3553,23 @@ public partial class MainWindow : Window
         else if (!_isExpanded)
         {
             SyncCompactStripVisibility();
+        }
+
+        if (wasPlaying != _isMediaPlaying)
+            SyncEqTimerState();
+
+        if (!_isExpanded)
+            return;
+
+        // Dynamic Hero Glow from Album Dominant Color
+        if (_isMediaPlaying && track.DominantColor.HasValue && !_isStreamPrivacyActive)
+        {
+            var dc = track.DominantColor.Value;
+            MediaHeroGlowStop.Color = MediaColor.FromArgb(62, dc.R, dc.G, dc.B);
+        }
+        else
+        {
+            MediaHeroGlowStop.Color = MediaColor.FromArgb(24, 56, 189, 248);
         }
 
         MediaTitleText.Text = _isStreamPrivacyActive
@@ -3244,18 +3599,18 @@ public partial class MainWindow : Window
         {
             MediaSourceBadge.Text = track.SourceLabel;
             if (track.SourceLabel.Contains("Spotify", StringComparison.OrdinalIgnoreCase))
-                MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(30, 215, 96));
+                MediaSourceDot.Fill = BrushSpotifyGreen;
             else if (track.SourceLabel.Contains("SoundCloud", StringComparison.OrdinalIgnoreCase))
-                MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(255, 119, 0));
+                MediaSourceDot.Fill = BrushSoundCloudOrange;
             else if (track.SourceLabel.Contains("YT", StringComparison.OrdinalIgnoreCase))
-                MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(239, 68, 68));
+                MediaSourceDot.Fill = BrushYtRed;
             else
                 MediaSourceDot.SetResourceReference(Shape.FillProperty, "AccentBrightBrush");
         }
         else
         {
             MediaSourceBadge.Text = "Плеер";
-            MediaSourceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(113, 113, 122));
+            MediaSourceDot.Fill = BrushNeutralDot;
         }
 
         if (track.HasSession && track.HasTimeline)
@@ -3264,24 +3619,39 @@ public partial class MainWindow : Window
             MediaProgressFill.Width = barW * Math.Clamp(track.ProgressRatio, 0.0, 1.0);
             MediaElapsedText.Text = FormatMediaDuration(track.PositionSeconds);
             MediaDurationText.Text = FormatMediaDuration(track.DurationSeconds);
+            _lastMediaPositionSec = track.PositionSeconds;
+            _lastMediaDurationSec = track.DurationSeconds;
         }
         else
         {
             MediaProgressFill.Width = 0;
             MediaElapsedText.Text = "0:00";
             MediaDurationText.Text = "0:00";
+            _lastMediaPositionSec = 0;
+            _lastMediaDurationSec = 0;
         }
 
-        if (_isExpanded && TabRemote.IsChecked == true)
+        if (_isLyricsOpen && TabRemote.IsChecked == true)
+        {
+            if (track.HasSession && !string.IsNullOrWhiteSpace(track.Title) &&
+                !string.Equals(_lyricsTrackKey, trackKey, StringComparison.Ordinal))
+            {
+                _ = EnsureLyricsLoadedAsync(track.Title, track.Artist, trackKey);
+            }
+            else
+            {
+                UpdateSyncedLyricsHighlight(_lastMediaPositionSec);
+            }
+        }
+
+        if (TabRemote.IsChecked == true)
         {
             int vol = CoreAudioService.GetMasterVolumePercent();
             SyncVolumeUi(vol);
 
             bool micMuted = CoreAudioService.IsMicMuted();
             MicMuteBtn.Content = micMuted ? "🔇 Мик: Выкл" : "🎙 Мик: Вкл";
-            MicMuteBtn.Foreground = micMuted
-                ? new SolidColorBrush(MediaColor.FromRgb(252, 165, 165))
-                : new SolidColorBrush(MediaColor.FromRgb(228, 228, 231));
+            MicMuteBtn.Foreground = micMuted ? BrushMicMutedText : BrushTextWhiteLight;
 
             var outputs = CoreAudioService.GetPlaybackDevices();
             var def = outputs.FirstOrDefault(o => o.IsDefault);
@@ -3395,10 +3765,19 @@ public partial class MainWindow : Window
 
     private void EqTimer_Tick(object? sender, EventArgs e)
     {
+        if (!_settings.EnableAnimations || !_isMediaPlaying)
+        {
+            _eqTimer.Stop();
+            return;
+        }
         bool remoteMusicVisible = _isExpanded && TabRemote.IsChecked == true && _isMediaPlaying;
         bool eqVisible = !_isExpanded && CompactEqPanel.Visibility == Visibility.Visible && CompactMetricsStrip.Visibility == Visibility.Visible;
         bool fullMusicVisible = !_isExpanded && CompactMusicStrip.Visibility == Visibility.Visible;
-        if (!eqVisible && !fullMusicVisible && !remoteMusicVisible) return;
+        if (!eqVisible && !fullMusicVisible && !remoteMusicVisible)
+        {
+            SyncEqTimerState();
+            return;
+        }
 
         float rawPeak = CoreAudioService.GetRenderPeakLevel();
         double peak = rawPeak < 0.015f ? (_isMediaPlaying ? 0.35 : 0.0) : Math.Clamp(Math.Pow(rawPeak, 0.48), 0.25, 1.0);
@@ -3441,14 +3820,18 @@ public partial class MainWindow : Window
             MusicBar6.Height = bar(4.5, 16.0);
             MusicBar7.Height = bar(5.4, 12.5);
 
-            // Bass-reactive ambient border pulse matched to dominant album color / theme accent
+            // Bass-reactive ambient border pulse matched to dominant album color / theme accent (zero Brush allocation)
             if (!_isBorderAlertActive && !_screenRecorder.IsRecording &&
                 _settings.BorderStyle != "Minimal" &&
                 !(_isInFullscreenGame && _settings.GameModeAutoProfile && (_isAltHeldInGame || (_isMicMutedCached && _settings.GameShowMicMute))))
             {
                 var baseCol = _currentMediaDominantColor ?? ThemeHelper.GetAccentColors(_settings.AccentTheme).Bright;
                 byte glowAlpha = (byte)Math.Clamp(60 + peak * 155, 60, 215);
-                IslandBorder.BorderBrush = new SolidColorBrush(MediaColor.FromArgb(glowAlpha, baseCol.R, baseCol.G, baseCol.B));
+                var nextCol = MediaColor.FromArgb(glowAlpha, baseCol.R, baseCol.G, baseCol.B);
+                if (_dynamicBorderGlowBrush.Color != nextCol)
+                    _dynamicBorderGlowBrush.Color = nextCol;
+                if (!ReferenceEquals(IslandBorder.BorderBrush, _dynamicBorderGlowBrush))
+                    IslandBorder.BorderBrush = _dynamicBorderGlowBrush;
             }
 
             // Smooth horizontal marquee ONLY if title overflows the 118px viewport
@@ -3659,8 +4042,172 @@ public partial class MainWindow : Window
     {
         _isAppsEditMode = EditAppsBtn.IsChecked == true;
         AppsEditHintText.Visibility = _isAppsEditMode ? Visibility.Visible : Visibility.Collapsed;
+        SyncHomeWidgetEditChrome();
         RebuildAppTiles();
         if (_isExpanded) ScheduleExpandedResize(animate: true);
+    }
+
+    private void DoneEditMode_Click(object sender, RoutedEventArgs e)
+    {
+        _isAppsEditMode = false;
+        EditAppsBtn.IsChecked = false;
+        SyncHomeWidgetEditChrome();
+        RebuildAppTiles();
+        if (_isExpanded) ScheduleExpandedResize(animate: true);
+    }
+
+    private void SyncHomeWidgetEditChrome()
+    {
+        var vis = _isAppsEditMode ? Visibility.Visible : Visibility.Collapsed;
+        WidgetEditBar_QuickTools.Visibility = vis;
+        WidgetEditBar_MusicWeather.Visibility = vis;
+        WidgetEditBar_HomeDock.Visibility = vis;
+        WidgetEditBar_FileShelf.Visibility = vis;
+        WidgetEditBar_Notifications.Visibility = vis;
+
+        if (_isAppsEditMode)
+        {
+            RebuildHiddenWidgetsWrap();
+            HomeAddWidgetsPanel.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            HomeAddWidgetsPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static string GetWidgetDisplayName(string id) => id switch
+    {
+        "QuickTools" => "Быстрые инструменты",
+        "MusicWeather" => "Музыка и Погода",
+        "HomeDock" => "Быстрый запуск",
+        "FileShelf" => "Полка файлов",
+        "Notifications" => "Центр уведомлений",
+        _ => id
+    };
+
+    private FrameworkElement? GetWidgetElementById(string id) => id switch
+    {
+        "QuickTools" => WidgetQuickTools,
+        "MusicWeather" => WidgetMusicWeather,
+        "HomeDock" => WidgetHomeDock,
+        "FileShelf" => WidgetFileShelf,
+        "Notifications" => WidgetNotifications,
+        _ => null
+    };
+
+    private void EnsureHomeWidgetDefaults()
+    {
+        var all = new[] { "QuickTools", "MusicWeather", "HomeDock", "FileShelf", "Notifications" };
+        _settings.HomeWidgetOrder ??= new();
+        _settings.HiddenHomeWidgets ??= new();
+        foreach (var id in all)
+        {
+            if (!_settings.HomeWidgetOrder.Contains(id))
+                _settings.HomeWidgetOrder.Add(id);
+        }
+        _settings.HomeWidgetOrder.RemoveAll(id => !all.Contains(id));
+    }
+
+    private void ApplyHomeWidgetLayout()
+    {
+        EnsureHomeWidgetDefaults();
+        HomeWidgetsHost.Children.Clear();
+        foreach (var id in _settings.HomeWidgetOrder)
+        {
+            var el = GetWidgetElementById(id);
+            if (el == null) continue;
+            bool hidden = _settings.HiddenHomeWidgets.Contains(id);
+            el.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
+            HomeWidgetsHost.Children.Add(el);
+        }
+        if (_isAppsEditMode)
+            RebuildHiddenWidgetsWrap();
+    }
+
+    private void RebuildHiddenWidgetsWrap()
+    {
+        EnsureHomeWidgetDefaults();
+        HomeHiddenWidgetsWrap.Children.Clear();
+        if (_settings.HiddenHomeWidgets.Count == 0)
+        {
+            HomeAddWidgetsHint.Text = "Перемещайте виджеты стрелками ↑↓ или нажмите ✕ Убрать. Скрытые виджеты можно вернуть здесь:";
+            return;
+        }
+
+        HomeAddWidgetsHint.Text = "Нажмите + чтобы вернуть виджет на Главную:";
+        foreach (var id in _settings.HiddenHomeWidgets.ToList())
+        {
+            var chip = new System.Windows.Controls.Button
+            {
+                Content = $"+ {GetWidgetDisplayName(id)}",
+                Style = (Style)FindResource("DarkButton"),
+                Padding = new Thickness(9, 4, 9, 4),
+                FontSize = 10,
+                Margin = new Thickness(0, 2, 6, 2),
+                Tag = id
+            };
+            chip.Click += RestoreWidget_Click;
+            HomeHiddenWidgetsWrap.Children.Add(chip);
+        }
+    }
+
+    private void MoveWidgetUp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not string id) return;
+        EnsureHomeWidgetDefaults();
+        int idx = _settings.HomeWidgetOrder.IndexOf(id);
+        int prev = idx - 1;
+        while (prev >= 0 && _settings.HiddenHomeWidgets.Contains(_settings.HomeWidgetOrder[prev])) prev--;
+        if (idx > 0 && prev >= 0)
+        {
+            (_settings.HomeWidgetOrder[idx], _settings.HomeWidgetOrder[prev]) = (_settings.HomeWidgetOrder[prev], _settings.HomeWidgetOrder[idx]);
+            SettingsService.Save(_settings);
+            ApplyHomeWidgetLayout();
+            ScheduleExpandedResize(animate: true);
+        }
+    }
+
+    private void MoveWidgetDown_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not string id) return;
+        EnsureHomeWidgetDefaults();
+        int idx = _settings.HomeWidgetOrder.IndexOf(id);
+        int next = idx + 1;
+        while (next < _settings.HomeWidgetOrder.Count && _settings.HiddenHomeWidgets.Contains(_settings.HomeWidgetOrder[next])) next++;
+        if (idx >= 0 && next < _settings.HomeWidgetOrder.Count)
+        {
+            (_settings.HomeWidgetOrder[idx], _settings.HomeWidgetOrder[next]) = (_settings.HomeWidgetOrder[next], _settings.HomeWidgetOrder[idx]);
+            SettingsService.Save(_settings);
+            ApplyHomeWidgetLayout();
+            ScheduleExpandedResize(animate: true);
+        }
+    }
+
+    private void HideWidget_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not string id) return;
+        EnsureHomeWidgetDefaults();
+        if (_settings.HomeWidgetOrder.Count(x => !_settings.HiddenHomeWidgets.Contains(x)) <= 1)
+        {
+            ShowToast("ℹ", "Оставьте хотя бы 1 виджет на Главной", durationMs: 2200);
+            return;
+        }
+        if (!_settings.HiddenHomeWidgets.Contains(id))
+            _settings.HiddenHomeWidgets.Add(id);
+        SettingsService.Save(_settings);
+        ApplyHomeWidgetLayout();
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void RestoreWidget_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not string id) return;
+        EnsureHomeWidgetDefaults();
+        _settings.HiddenHomeWidgets.Remove(id);
+        SettingsService.Save(_settings);
+        ApplyHomeWidgetLayout();
+        ScheduleExpandedResize(animate: true);
     }
 
     private static HashSet<string> GetRunningProcessNames()
@@ -3748,6 +4295,9 @@ public partial class MainWindow : Window
         AppsWrapPanel.Children.Clear();
         HomeDockAppsPanel.Children.Clear();
 
+        if (HomeAppsCountText != null)
+            HomeAppsCountText.Text = _settings.PinnedApps.Count.ToString();
+
         var runningProcs = GetRunningProcessNames();
         foreach (var app in _settings.PinnedApps)
         {
@@ -3765,15 +4315,15 @@ public partial class MainWindow : Window
         var scale = new ScaleTransform(1.0, 1.0);
         var tile = new Border
         {
-            Width = 42,
-            Height = 46,
+            Width = 44,
+            Height = 48,
             CornerRadius = new CornerRadius(12),
             Background = MediaBrushes.Transparent,
             BorderBrush = MediaBrushes.Transparent,
             BorderThickness = new Thickness(1),
-            Margin = new Thickness(0, 0, 6, 0),
+            Margin = new Thickness(0, 0, 5, 0),
             Cursor = System.Windows.Input.Cursors.Hand,
-            ToolTip = _isAppsEditMode ? $"Перетащите «{app.Name}»" : app.Name,
+            ToolTip = _isAppsEditMode ? $"Перетащите «{app.Name}»" : (isRunning ? $"{app.Name} · Запущено" : app.Name),
             Tag = app,
             AllowDrop = _isAppsEditMode
         };
@@ -3788,27 +4338,30 @@ public partial class MainWindow : Window
 
         var iconGlow = new Border
         {
-            Width = 36,
-            Height = 36,
+            Width = 38,
+            Height = 38,
             CornerRadius = new CornerRadius(11),
-            Background = MediaBrushes.Transparent,
+            Background = BrushAppDockTileBg,
+            BorderBrush = isRunning ? BrushRunningPillBlue : BrushAppDockTileBorder,
+            BorderThickness = new Thickness(1),
             RenderTransformOrigin = new MediaPoint(0.5, 0.5),
             RenderTransform = scale,
-            Child = CreateAppIconVisual(app.ExecutablePath, app.Name, 31)
+            Child = CreateAppIconVisual(app.ExecutablePath, app.Name, 26)
         };
 
-        var runningDot = new System.Windows.Shapes.Ellipse
+        var runningPill = new Border
         {
-            Width = 3.5,
-            Height = 3.5,
-            Fill = new SolidColorBrush(MediaColor.FromRgb(244, 244, 245)),
+            Width = isRunning ? 12 : 4,
+            Height = 3,
+            CornerRadius = new CornerRadius(1.5),
+            Background = BrushRunningPillBlue,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-            Margin = new Thickness(0, 3, 0, 0),
+            Margin = new Thickness(0, 3.5, 0, 0),
             Opacity = isRunning ? 0.95 : 0.0
         };
 
         col.Children.Add(iconGlow);
-        col.Children.Add(runningDot);
+        col.Children.Add(runningPill);
         root.Children.Add(col);
 
         if (_isAppsEditMode)
@@ -3822,12 +4375,13 @@ public partial class MainWindow : Window
 
         tile.MouseEnter += (_, _) =>
         {
-            iconGlow.Background = new SolidColorBrush(MediaColor.FromArgb(24, 255, 255, 255));
+            iconGlow.Background = BrushAppDockTileHoverBg;
+            iconGlow.BorderBrush = BrushAppDockTileHoverBorder;
             if (_settings.EnableAnimations)
             {
-                var anim = new DoubleAnimation(1.20, TimeSpan.FromMilliseconds(150))
+                var anim = new DoubleAnimation(1.16, TimeSpan.FromMilliseconds(150))
                 {
-                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.36 }
+                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.34 }
                 };
                 scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
                 scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
@@ -3835,7 +4389,8 @@ public partial class MainWindow : Window
         };
         tile.MouseLeave += (_, _) =>
         {
-            iconGlow.Background = MediaBrushes.Transparent;
+            iconGlow.Background = BrushAppDockTileBg;
+            iconGlow.BorderBrush = isRunning ? BrushRunningPillBlue : BrushAppDockTileBorder;
             if (_settings.EnableAnimations)
             {
                 var anim = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(150))
@@ -3856,12 +4411,13 @@ public partial class MainWindow : Window
         var scale = new ScaleTransform(1.0, 1.0);
         var btn = new Border
         {
-            Width = 35,
-            Height = 35,
-            CornerRadius = new CornerRadius(17.5),
-            Background = new SolidColorBrush(MediaColor.FromRgb(42, 44, 52)),
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(4, 0, 0, 6),
+            Width = 38,
+            Height = 38,
+            CornerRadius = new CornerRadius(11),
+            Background = BrushAppAddCircleBg,
+            BorderBrush = BrushAppDockTileBorder,
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(3, 0, 0, 6.5),
             Cursor = System.Windows.Input.Cursors.Hand,
             RenderTransformOrigin = new MediaPoint(0.5, 0.5),
             RenderTransform = scale,
@@ -3870,12 +4426,12 @@ public partial class MainWindow : Window
             Child = new System.Windows.Shapes.Path
             {
                 Data = Geometry.Parse("M 12,6.5 L 12,17.5 M 6.5,12 L 17.5,12"),
-                Stroke = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+                Stroke = BrushTextWhiteLight,
                 StrokeThickness = 1.9,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
-                Width = 22,
-                Height = 22,
+                Width = 20,
+                Height = 20,
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             }
@@ -3883,12 +4439,13 @@ public partial class MainWindow : Window
 
         btn.MouseEnter += (_, _) =>
         {
-            btn.Background = new SolidColorBrush(MediaColor.FromRgb(58, 61, 74));
+            btn.Background = BrushAppAddCircleHoverBg;
+            btn.BorderBrush = BrushAppDockTileHoverBorder;
             if (_settings.EnableAnimations)
             {
-                var anim = new DoubleAnimation(1.12, TimeSpan.FromMilliseconds(140))
+                var anim = new DoubleAnimation(1.10, TimeSpan.FromMilliseconds(140))
                 {
-                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 }
+                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.28 }
                 };
                 scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
                 scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
@@ -3896,7 +4453,8 @@ public partial class MainWindow : Window
         };
         btn.MouseLeave += (_, _) =>
         {
-            btn.Background = new SolidColorBrush(MediaColor.FromRgb(42, 44, 52));
+            btn.Background = BrushAppAddCircleBg;
+            btn.BorderBrush = BrushAppDockTileBorder;
             if (_settings.EnableAnimations)
             {
                 var anim = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(140))
@@ -4205,17 +4763,20 @@ public partial class MainWindow : Window
 
     private Border CreateAppTile(PinnedApp app, bool isRunning)
     {
+        var scale = new ScaleTransform(1.0, 1.0);
         var tile = new Border
         {
-            Width = 90,
-            Height = 76,
-            CornerRadius = new CornerRadius(14),
-            Background = MediaBrushes.Transparent,
-            BorderBrush = MediaBrushes.Transparent,
+            Width = 92,
+            Height = 78,
+            CornerRadius = new CornerRadius(15),
+            Background = BrushAppGridTileBg,
+            BorderBrush = isRunning ? BrushRunningPillBlue : BrushAppDockTileBorder,
             BorderThickness = new Thickness(1),
             Margin = new Thickness(0, 0, 6, 6),
             Cursor = System.Windows.Input.Cursors.Hand,
-            ToolTip = _isAppsEditMode ? $"Перетащите «{app.Name}» для смены места" : $"Запустить {app.Name}",
+            RenderTransformOrigin = new MediaPoint(0.5, 0.5),
+            RenderTransform = scale,
+            ToolTip = _isAppsEditMode ? $"Перетащите «{app.Name}» для смены места" : (isRunning ? $"{app.Name} · Запущено" : $"Запустить {app.Name}"),
             Tag = app,
             AllowDrop = _isAppsEditMode
         };
@@ -4229,9 +4790,16 @@ public partial class MainWindow : Window
             Margin = new Thickness(4)
         };
 
-        var iconVisual = CreateAppIconVisual(app.ExecutablePath, app.Name, 34);
-        if (iconVisual is FrameworkElement feIcon)
-            feIcon.Margin = new Thickness(0, 0, 0, 5);
+        var iconFrame = new Border
+        {
+            Width = 38,
+            Height = 38,
+            CornerRadius = new CornerRadius(11),
+            Background = BrushAppGridIconBoxBg,
+            Margin = new Thickness(0, 0, 0, 5),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            Child = CreateAppIconVisual(app.ExecutablePath, app.Name, 26)
+        };
 
         var labelRow = new StackPanel
         {
@@ -4243,9 +4811,9 @@ public partial class MainWindow : Window
         {
             labelRow.Children.Add(new System.Windows.Shapes.Ellipse
             {
-                Width = 4,
-                Height = 4,
-                Fill = new SolidColorBrush(MediaColor.FromRgb(244, 244, 245)),
+                Width = 5,
+                Height = 5,
+                Fill = BrushRunningPillBlue,
                 Margin = new Thickness(0, 1, 4, 0),
                 VerticalAlignment = VerticalAlignment.Center
             });
@@ -4254,30 +4822,51 @@ public partial class MainWindow : Window
         var label = new TextBlock
         {
             Text = app.Name,
-            FontSize = 10.5,
-            Foreground = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+            FontSize = 10.2,
+            FontWeight = FontWeights.Medium,
+            Foreground = BrushTextWhiteLight,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
-            MaxWidth = isRunning ? 74 : 82,
+            MaxWidth = isRunning ? 72 : 82,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
         labelRow.Children.Add(label);
 
-        center.Children.Add(iconVisual);
+        center.Children.Add(iconFrame);
         center.Children.Add(labelRow);
         root.Children.Add(center);
 
         if (_isAppsEditMode)
         {
             var badge = CreateRemoveAppBadge(app);
-            badge.Margin = new Thickness(0, 4, 4, 0);
+            badge.Margin = new Thickness(0, 3, 3, 0);
             root.Children.Add(badge);
         }
 
         tile.Child = root;
 
-        tile.MouseEnter += (_, _) => tile.Background = new SolidColorBrush(MediaColor.FromRgb(36, 38, 48));
-        tile.MouseLeave += (_, _) => tile.Background = MediaBrushes.Transparent;
+        tile.MouseEnter += (_, _) =>
+        {
+            tile.Background = BrushAppGridTileHoverBg;
+            tile.BorderBrush = BrushAppDockTileHoverBorder;
+            if (_settings.EnableAnimations)
+            {
+                var anim = new DoubleAnimation(1.04, TimeSpan.FromMilliseconds(130));
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+            }
+        };
+        tile.MouseLeave += (_, _) =>
+        {
+            tile.Background = BrushAppGridTileBg;
+            tile.BorderBrush = isRunning ? BrushRunningPillBlue : BrushAppDockTileBorder;
+            if (_settings.EnableAnimations)
+            {
+                var anim = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(130));
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+            }
+        };
 
         AttachAppTileBehavior(tile, app, AppsWrapPanel);
         return tile;
@@ -4296,7 +4885,7 @@ public partial class MainWindow : Window
             if (tile.IsMouseCaptured)
                 tile.ReleaseMouseCapture();
             tile.Opacity = 1.0;
-            tile.BorderBrush = MediaBrushes.Transparent;
+            tile.BorderBrush = BrushAppDockTileBorder;
             tile.BorderThickness = new Thickness(1);
         }
 
@@ -4308,11 +4897,12 @@ public partial class MainWindow : Window
     {
         var tile = new Border
         {
-            Width = 90,
-            Height = 76,
-            CornerRadius = new CornerRadius(14),
-            Background = MediaBrushes.Transparent,
-            BorderThickness = new Thickness(0),
+            Width = 92,
+            Height = 78,
+            CornerRadius = new CornerRadius(15),
+            Background = BrushAppGridTileBg,
+            BorderBrush = BrushAppDockTileBorder,
+            BorderThickness = new Thickness(1),
             Margin = new Thickness(0, 0, 6, 6),
             Cursor = System.Windows.Input.Cursors.Hand,
             ToolTip = "Добавить или найти приложение (+)"
@@ -4325,20 +4915,20 @@ public partial class MainWindow : Window
         };
         var plusCircle = new Border
         {
-            Width = 34,
-            Height = 34,
-            CornerRadius = new CornerRadius(17),
-            Background = new SolidColorBrush(MediaColor.FromRgb(42, 44, 52)),
+            Width = 36,
+            Height = 36,
+            CornerRadius = new CornerRadius(11),
+            Background = BrushAppAddCircleBg,
             Margin = new Thickness(0, 0, 0, 5),
             Child = new System.Windows.Shapes.Path
             {
                 Data = Geometry.Parse("M 12,6.5 L 12,17.5 M 6.5,12 L 17.5,12"),
-                Stroke = new SolidColorBrush(MediaColor.FromRgb(228, 228, 231)),
+                Stroke = BrushTextWhiteLight,
                 StrokeThickness = 1.9,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
-                Width = 22,
-                Height = 22,
+                Width = 20,
+                Height = 20,
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             }
@@ -4348,14 +4938,23 @@ public partial class MainWindow : Window
         stack.Children.Add(new TextBlock
         {
             Text = "Добавить",
-            FontSize = 10.5,
-            Foreground = new SolidColorBrush(MediaColor.FromRgb(161, 161, 170)),
+            FontSize = 10.2,
+            FontWeight = FontWeights.Medium,
+            Foreground = BrushDiscordDimGray,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center
         });
         tile.Child = stack;
 
-        tile.MouseEnter += (_, _) => tile.Background = new SolidColorBrush(MediaColor.FromRgb(36, 38, 48));
-        tile.MouseLeave += (_, _) => tile.Background = MediaBrushes.Transparent;
+        tile.MouseEnter += (_, _) =>
+        {
+            tile.Background = BrushAppGridTileHoverBg;
+            tile.BorderBrush = BrushAppDockTileHoverBorder;
+        };
+        tile.MouseLeave += (_, _) =>
+        {
+            tile.Background = BrushAppGridTileBg;
+            tile.BorderBrush = BrushAppDockTileBorder;
+        };
         tile.MouseLeftButtonUp += (_, _) => ToggleInlineAppSearch();
 
         return tile;
@@ -4368,7 +4967,12 @@ public partial class MainWindow : Window
             Filter = "Программы и ярлыки (*.exe;*.lnk)|*.exe;*.lnk|Все файлы (*.*)|*.*",
             Title = "Выберите приложение для Desktop Island"
         };
-        if (dlg.ShowDialog() == true)
+        bool? ok;
+        _isModalDialogOpen = true;
+        try { ok = dlg.ShowDialog(); }
+        finally { _isModalDialogOpen = false; }
+
+        if (ok == true)
         {
             _settings.PinnedApps.Add(new PinnedApp
             {
@@ -4455,7 +5059,7 @@ public partial class MainWindow : Window
         catch { }
     }
 
-    public async Task RunOptimizeMemoryAsync(bool isAuto = false)
+    public async Task RunOptimizeMemoryAsync(bool isAuto = false, bool silentIfSmall = false)
     {
         if (_isOptimizingRam) return;
         _isOptimizingRam = true;
@@ -4466,20 +5070,32 @@ public partial class MainWindow : Window
             AnimateLightningFill(1.0, TimeSpan.FromMilliseconds(550));
             var res = await MemoryOptimizerService.OptimizeAsync();
 
-            _isShowingRamResult = true;
-            RamQuickText.Text = res.FreedGb >= 0.05 ? $"+{res.FreedGb:F1} ГБ" : $"{res.AfterPercent}%";
-            RamQuickText.Foreground = new SolidColorBrush(MediaColor.FromRgb(250, 204, 21));
-            UpdateRamPillState(animate: true);
+            bool notifyUser = !silentIfSmall || res.FreedGb >= 0.15;
+            if (notifyUser)
+            {
+                _isShowingRamResult = true;
+                RamQuickText.Text = res.FreedGb >= 0.05 ? $"+{res.FreedGb:F1} ГБ" : $"{res.AfterPercent}%";
+                RamQuickText.Foreground = new SolidColorBrush(MediaColor.FromRgb(250, 204, 21));
+                UpdateRamPillState(animate: true);
 
-            _ramLabelResetTimer.Stop();
-            _ramLabelResetTimer.Start();
+                _ramLabelResetTimer.Stop();
+                _ramLabelResetTimer.Start();
 
-            FlashIslandBorder(MediaColor.FromRgb(34, 197, 94));
-            var toastMsg = isAuto
-                ? $"Авто-ОЗУ: освобождено {res.FreedGb:F1} ГБ ({res.AfterPercent}%)"
-                : $"ОЗУ: освобождено {res.FreedGb:F1} ГБ ({res.AfterPercent}%)";
-            ShowToast("⚡", toastMsg, durationMs: 3200);
-            CleanupStatusText.Text = toastMsg;
+                FlashIslandBorder(MediaColor.FromRgb(34, 197, 94));
+                var toastMsg = isAuto
+                    ? $"Авто-буст ОЗУ: освобождено {res.FreedGb:F1} ГБ ({res.AfterPercent}%)"
+                    : $"ОЗУ: освобождено {res.FreedGb:F1} ГБ ({res.AfterPercent}%)";
+                ShowToast("⚡", toastMsg, durationMs: 3200);
+                CleanupStatusText.Text = toastMsg;
+                if (isAuto && res.FreedGb >= 0.1)
+                {
+                    AddNotification("⚡", "Память", $"Авто-буст ОЗУ: +{res.FreedGb:F1} ГБ", $"Нагрузка снизилась до {res.AfterPercent}%");
+                }
+            }
+            else
+            {
+                AnimateLightningFill(0.0, TimeSpan.FromMilliseconds(400));
+            }
         }
         catch (Exception ex)
         {
@@ -4490,6 +5106,34 @@ public partial class MainWindow : Window
             OptimizeRamBtn.IsEnabled = true;
             _isOptimizingRam = false;
         }
+    }
+
+    private void SyncAutoRamUi()
+    {
+        if (AutoRamStatusText == null) return;
+        int pct = Math.Clamp(_settings.RamThresholdPercent, 60, 95);
+        AutoRamStatusText.Text = _settings.AutoOptimizeRamOnThreshold
+            ? $"Авто-буст ОЗУ: Вкл (порог {pct}% + фон)"
+            : $"Авто-буст ОЗУ: Выкл (порог {pct}%)";
+        AutoRamStatusText.Foreground = _settings.AutoOptimizeRamOnThreshold
+            ? BrushFpsGood
+            : BrushDiscordDimGray;
+        if (CleanerAutoRamCard != null)
+        {
+            CleanerAutoRamCard.Background = _settings.AutoOptimizeRamOnThreshold ? BrushAutoRamOnBg : BrushAutoRamOffBg;
+            CleanerAutoRamCard.BorderBrush = _settings.AutoOptimizeRamOnThreshold ? BrushAutoRamOnBorder : BrushAutoRamOffBorder;
+        }
+    }
+
+    private void ToggleAutoRamQuick_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.AutoOptimizeRamOnThreshold = !_settings.AutoOptimizeRamOnThreshold;
+        SettingsService.Save(_settings);
+        SyncAutoRamUi();
+        int pct = Math.Clamp(_settings.RamThresholdPercent, 60, 95);
+        ShowToast("⚡", _settings.AutoOptimizeRamOnThreshold
+            ? $"Авто-буст ОЗУ включён (порог {pct}%)"
+            : "Авто-буст ОЗУ выключен", durationMs: 2200);
     }
 
     private void RamLabelResetTimer_Tick(object? sender, EventArgs e)
@@ -4541,10 +5185,6 @@ public partial class MainWindow : Window
         var procs = _sysMonitor.GetTopProcesses(3);
         _topProcesses.Clear();
         foreach (var p in procs) _topProcesses.Add(p);
-
-        var dl = _sysMonitor.GetRecentDownloads(4);
-        _recentDownloads.Clear();
-        foreach (var f in dl) _recentDownloads.Add(f);
 
         UpdateSparklinesUi();
 
@@ -4705,10 +5345,6 @@ public partial class MainWindow : Window
                     durationMs: 8000,
                     title: "Загрузка завершена",
                     showCountdown: true);
-
-                var dl = _sysMonitor.GetRecentDownloads(4);
-                _recentDownloads.Clear();
-                foreach (var f in dl) _recentDownloads.Add(f);
             });
         }
         catch { }
@@ -4844,9 +5480,6 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(text)) return;
         string trimmed = text.Trim();
 
-        if (_isExpanded && TabUtils.IsChecked == true)
-            ScheduleExpandedResize(animate: true);
-
         // 1. HEX Color Swatch (#RRGGBB)
         if (System.Text.RegularExpressions.Regex.IsMatch(trimmed, "^#[0-9a-fA-F]{6}$"))
         {
@@ -4883,7 +5516,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenDrive_Click(object sender, RoutedEventArgs e)
+    private void OpenDrive_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement fe && fe.Tag is string root)
             OpenShellTarget(root);
@@ -4904,12 +5537,6 @@ public partial class MainWindow : Window
                 ShowToast("⚠", $"Нет прав для завершения {proc.Name}");
             }
         }
-    }
-
-    private void OpenRecentFile_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is string path && File.Exists(path))
-            OpenShellTarget(path);
     }
 
     private static void OpenShellTarget(string path)
@@ -5176,35 +5803,6 @@ public partial class MainWindow : Window
             durationMs: 2200);
     }
 
-    private void ToggleDnd_Click(object sender, RoutedEventArgs e)
-    {
-        _dndAutoOffEndUtc = null;
-        bool enabled = QuickToolsService.ToggleDoNotDisturb();
-        SyncQuickToolStates();
-        ShowToast(enabled ? "🔕" : "🔔", enabled ? "Не беспокоить: Вкл" : "Не беспокоить: Выкл", durationMs: 2200);
-    }
-
-    private void SetDndMinutes_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement fe && int.TryParse(fe.Tag?.ToString(), out int mins))
-        {
-            if (mins <= 0)
-            {
-                _dndAutoOffEndUtc = null;
-                QuickToolsService.SetDoNotDisturbEnabled(false);
-                SyncQuickToolStates();
-                ShowToast("🔔", "Не беспокоить: Выключен", durationMs: 2000);
-            }
-            else
-            {
-                _dndAutoOffEndUtc = DateTime.UtcNow.AddMinutes(mins);
-                QuickToolsService.SetDoNotDisturbEnabled(true);
-                SyncQuickToolStates();
-                ShowToast("🔕", $"Не беспокоить на {mins} мин", durationMs: 2200);
-            }
-        }
-    }
-
     private void TogglePowerMode_Click(object sender, RoutedEventArgs e)
     {
         bool highPerf = QuickToolsService.ToggleHighPerformancePlan();
@@ -5214,21 +5812,6 @@ public partial class MainWindow : Window
 
     private void SyncQuickToolStates()
     {
-        bool dnd = QuickToolsService.IsDoNotDisturbEnabled();
-        DndIconText.Text = dnd ? "🔕" : "🔔";
-        if (_dndAutoOffEndUtc.HasValue)
-        {
-            var left = _dndAutoOffEndUtc.Value - DateTime.UtcNow;
-            DndLabelText.Text = left > TimeSpan.Zero ? $"Вкл · {(int)Math.Ceiling(left.TotalMinutes)}м" : "Вкл";
-        }
-        else
-        {
-            DndLabelText.Text = dnd ? "Вкл" : "Выкл";
-        }
-        DndToggleBtn.Background = dnd
-            ? new SolidColorBrush(MediaColor.FromRgb(49, 46, 129))
-            : new SolidColorBrush(MediaColor.FromRgb(31, 32, 40));
-
         bool highPerf = QuickToolsService.IsHighPerformancePlanActive();
         PowerModeLabelText.Text = highPerf ? "⚡ Питание: Макс" : "⚡ Питание: Баланс";
         PowerModeBtn.Background = highPerf
@@ -5324,50 +5907,98 @@ public partial class MainWindow : Window
 
     #endregion
 
-    #region Utils Tab ("Буфер": Calc, QR, Drag&Drop Shelf, Clipboard)
+    #region Home QR Generator Menu ("QR-код")
 
-    private void RefreshUtilsTab()
+    private void OpenHomeQrMenu_Click(object sender, RoutedEventArgs e)
     {
-        SyncDropShelfUi();
-    }
-
-    private void SyncDropShelfUi()
-    {
-        DropShelfEmptyText.Visibility = _dropShelfItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        ClearShelfBtn.Visibility = _dropShelfItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void QuickCalcBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        string text = QuickCalcBox.Text ?? string.Empty;
-        QuickCalcPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
-
-        if (!string.IsNullOrWhiteSpace(text) &&
-            HardwareAndUtilityService.TryEvaluateExpression(text, _settings.PreferredCurrency, out var res))
+        if (HomeQrCard.Visibility == Visibility.Visible)
         {
-            _lastCalcResult = res;
-            QuickCalcResultText.Text = $"= {res}";
-            QuickCalcResultText.Visibility = Visibility.Visible;
-            CopyCalcResultBtn.Visibility = Visibility.Visible;
+            CloseQrCard_Click(sender, e);
+            return;
+        }
+
+        string initial = string.Empty;
+        try
+        {
+            if (System.Windows.Clipboard.ContainsText())
+                initial = System.Windows.Clipboard.GetText().Trim();
+        }
+        catch { }
+
+        ShowQrMenuWithText(initial, autoGenerate: false);
+    }
+
+    private void ShowQrMenuWithText(string initialText, bool autoGenerate)
+    {
+        HomeQrInputBox.Text = initialText;
+        HomeQrInputPlaceholder.Visibility = string.IsNullOrEmpty(initialText) ? Visibility.Visible : Visibility.Collapsed;
+        HomeQrResultPanel.Visibility = Visibility.Collapsed;
+        HomeQrCard.Visibility = Visibility.Visible;
+        AnimatePanelReveal(HomeQrCard, true);
+
+        if (autoGenerate && !string.IsNullOrWhiteSpace(initialText))
+        {
+            ShowQrCode(initialText);
         }
         else
         {
-            _lastCalcResult = string.Empty;
-            QuickCalcResultText.Visibility = Visibility.Collapsed;
-            CopyCalcResultBtn.Visibility = Visibility.Collapsed;
+            Activate();
+            HomeQrInputBox.Focus();
+            HomeQrInputBox.SelectAll();
+            ScheduleExpandedResize(animate: true);
         }
-
-        if (_isExpanded && TabUtils.IsChecked == true)
-            ScheduleExpandedResize(animate: false);
     }
 
-    private void CopyCalcResult_Click(object sender, RoutedEventArgs e)
+    private void PasteHomeQrInput_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(_lastCalcResult)) return;
         try
         {
-            System.Windows.Clipboard.SetText(_lastCalcResult);
-            ShowToast("🧮", $"Скопировано: {_lastCalcResult}", durationMs: 1800);
+            if (System.Windows.Clipboard.ContainsText())
+            {
+                HomeQrInputBox.Text = System.Windows.Clipboard.GetText().Trim();
+                HomeQrInputBox.CaretIndex = HomeQrInputBox.Text.Length;
+                Activate();
+                HomeQrInputBox.Focus();
+            }
+            else
+            {
+                ShowToast("📋", "В буфере нет текста", durationMs: 1800);
+            }
+        }
+        catch { }
+    }
+
+    private void HomeQrInputBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        HomeQrInputPlaceholder.Visibility = string.IsNullOrEmpty(HomeQrInputBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void HomeQrInputBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            ShowQrCode(HomeQrInputBox.Text);
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            CloseQrCard_Click(sender, e);
+        }
+    }
+
+    private void ConfirmHomeQr_Click(object sender, RoutedEventArgs e) => ShowQrCode(HomeQrInputBox.Text);
+
+    private void CopyHomeQrText_Click(object sender, RoutedEventArgs e)
+    {
+        string txt = HomeQrInputBox.Text.Trim();
+        if (string.IsNullOrEmpty(txt)) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(txt);
+            ShowToast("📋", "Текст скопирован", durationMs: 1600);
         }
         catch { }
     }
@@ -5376,7 +6007,9 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            ShowToast("📱", "Нет текста для QR-кода", durationMs: 2000);
+            ShowToast("📱", "Введите или вставьте текст для QR-кода", durationMs: 2200);
+            Activate();
+            HomeQrInputBox.Focus();
             return;
         }
 
@@ -5390,137 +6023,15 @@ public partial class MainWindow : Window
 
         QrPreviewImage.Source = bmp;
         QrSourceText.Text = _isStreamPrivacyActive ? "Скрыто (Стрим-щит)" : trimmed;
-        QrCodeCard.Visibility = Visibility.Visible;
-        OpenTab("Utils");
+        HomeQrResultPanel.Visibility = Visibility.Visible;
+        HomeQrCard.Visibility = Visibility.Visible;
         ScheduleExpandedResize(animate: true);
     }
 
     private void CloseQrCard_Click(object sender, RoutedEventArgs e)
     {
-        QrCodeCard.Visibility = Visibility.Collapsed;
-        ScheduleExpandedResize(animate: true);
-    }
-
-    private void QrFromClipboard_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            string text = System.Windows.Clipboard.ContainsText()
-                ? System.Windows.Clipboard.GetText()
-                : string.Empty;
-            ShowQrCode(text);
-        }
-        catch
-        {
-            ShowToast("⚠", "Не удалось прочитать буфер", durationMs: 2000);
-        }
-    }
-
-    private void CleanClipboardFormatting_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            if (System.Windows.Clipboard.ContainsText())
-            {
-                string plain = System.Windows.Clipboard.GetText();
-                System.Windows.Clipboard.SetText(plain);
-                ShowToast("🧹", "Форматирование текста очищено", durationMs: 2000);
-            }
-            else
-            {
-                ShowToast("📋", "В буфере нет текста", durationMs: 1800);
-            }
-        }
-        catch { }
-    }
-
-    private void ClearClipboardHistory_Click(object sender, RoutedEventArgs e)
-    {
-        _clipboardService.ClearUnpinned();
-        ScheduleExpandedResize(animate: true);
-    }
-
-    private void ClipboardItemCopy_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is ClipboardEntry entry)
-        {
-            _clipboardService.CopyEntry(entry.Text);
-            ShowToast("📋", "Скопировано в буфер", durationMs: 1600);
-        }
-    }
-
-    private void ClipboardItemQr_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is ClipboardEntry entry)
-            ShowQrCode(entry.Text);
-    }
-
-    private void ClipboardItemPin_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is ClipboardEntry entry)
-        {
-            _clipboardService.TogglePin(entry);
-            _settings.PinnedSnippets = _clipboardService.GetPinnedEntries();
-            SettingsService.Save(_settings);
-            ScheduleExpandedResize(animate: true);
-        }
-    }
-
-    private void ShelfItem_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is DropShelfItem item)
-        {
-            _shelfDragStart = e.GetPosition(null);
-            _shelfDragItem = item;
-
-            if (e.ClickCount == 2)
-            {
-                _shelfDragItem = null;
-                if (item.IsFile) OpenShellTarget(item.FullPath);
-                else
-                {
-                    try { System.Windows.Clipboard.SetText(item.FullPath); ShowToast("📋", "Текст скопирован", durationMs: 1600); } catch { }
-                }
-            }
-        }
-    }
-
-    private void ShelfItem_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed || _shelfDragItem == null) return;
-        MediaPoint pos = e.GetPosition(null);
-        Vector diff = _shelfDragStart - pos;
-        if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance)
-            return;
-
-        var item = _shelfDragItem;
-        _shelfDragItem = null;
-
-        try
-        {
-            var dataObj = item.IsFile && (File.Exists(item.FullPath) || Directory.Exists(item.FullPath))
-                ? new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { item.FullPath })
-                : new System.Windows.DataObject(System.Windows.DataFormats.UnicodeText, item.FullPath);
-            DragDrop.DoDragDrop(this, dataObj, System.Windows.DragDropEffects.Copy);
-        }
-        catch { }
-    }
-
-    private void RemoveShelfItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is DropShelfItem item)
-        {
-            _dropShelfItems.Remove(item);
-            SyncDropShelfUi();
-            ScheduleExpandedResize(animate: true);
-        }
-    }
-
-    private void ClearDropShelf_Click(object sender, RoutedEventArgs e)
-    {
-        _dropShelfItems.Clear();
-        SyncDropShelfUi();
+        HomeQrResultPanel.Visibility = Visibility.Collapsed;
+        HomeQrCard.Visibility = Visibility.Collapsed;
         ScheduleExpandedResize(animate: true);
     }
 
@@ -5531,14 +6042,47 @@ public partial class MainWindow : Window
     private async Task RefreshCleanupScanAsync()
     {
         CleanupStatusText.Text = "Сканирование...";
+        if (CleanerScanBadgeText != null)
+            CleanerScanBadgeText.Text = "СКАН...";
         var cats = await CleanupService.AnalyzeAsync();
         _cleanupCategories.Clear();
         foreach (var c in cats) _cleanupCategories.Add(c);
-        long total = cats.Sum(c => c.SizeBytes);
-        CleanupStatusText.Text = $"Найдено: {CleanupCategory.FormatBytes(total)}";
+        UpdateCleanerHeroUi();
+        UpdateCleanerRamUi(_latestMetrics);
         if (_isExpanded && TabCleaner.IsChecked == true)
             ScheduleExpandedResize(animate: true);
     }
+
+    private void UpdateCleanerHeroUi()
+    {
+        long selectedBytes = _cleanupCategories.Where(c => c.IsSelected).Sum(c => c.SizeBytes);
+        long totalBytes = _cleanupCategories.Sum(c => c.SizeBytes);
+        int selectedCount = _cleanupCategories.Count(c => c.IsSelected);
+
+        if (CleanerHeroTotalText != null)
+            CleanerHeroTotalText.Text = CleanupCategory.FormatBytes(selectedBytes);
+        if (CleanerHeroSubText != null)
+            CleanerHeroSubText.Text = selectedCount > 0
+                ? $"выбрано ({selectedCount} катег. из {CleanupCategory.FormatBytes(totalBytes)})"
+                : $"всего найдено: {CleanupCategory.FormatBytes(totalBytes)}";
+        if (CleanerScanBadgeText != null)
+            CleanerScanBadgeText.Text = totalBytes < 5L * 1024 * 1024 ? "ЧИСТО" : "ГОТОВО";
+        CleanupStatusText.Text = selectedCount > 0
+            ? $"Готово: {CleanupCategory.FormatBytes(selectedBytes)}"
+            : "Выберите категории выше";
+    }
+
+    private void UpdateCleanerRamUi(SystemMetrics? m)
+    {
+        if (m == null || CleanerRamPercentText == null || CleanerRamGaugeBar == null) return;
+        CleanerRamPercentText.Text = $"{m.RamPercent}% · {m.RamUsedGb:F1}/{m.RamTotalGb:F0} ГБ";
+        CleanerRamGaugeBar.Value = Math.Clamp(m.RamPercent, 0, 100);
+        var brush = m.RamPercent >= 85 ? BrushMetricHot : (m.RamPercent >= 70 ? BrushTempWarm : BrushMetricHighBlue);
+        CleanerRamPercentText.Foreground = brush;
+        CleanerRamGaugeBar.Foreground = brush;
+    }
+
+    private void CleanupCategoryCheck_Click(object sender, RoutedEventArgs e) => UpdateCleanerHeroUi();
 
     private void RefreshCleanup_Click(object sender, RoutedEventArgs e) => _ = RefreshCleanupScanAsync();
 
@@ -5553,12 +6097,19 @@ public partial class MainWindow : Window
 
         if (_settings.ConfirmControversialCleanup && selected.Any(c => c.RequiresConfirmation))
         {
-            var ans = System.Windows.MessageBox.Show(
-                "Очистить выбранные категории, включая Корзину?\n(Настройки и пароли браузеров не затрагиваются)",
-                "Desktop Island",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (ans != MessageBoxResult.Yes) return;
+            bool yes;
+            _isModalDialogOpen = true;
+            try
+            {
+                var ans = System.Windows.MessageBox.Show(
+                    "Очистить выбранные категории, включая Корзину?\n(Настройки и пароли браузеров не затрагиваются)",
+                    "Desktop Island",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                yes = ans == MessageBoxResult.Yes;
+            }
+            finally { _isModalDialogOpen = false; }
+            if (!yes) return;
         }
 
         CleanNowBtn.IsEnabled = false;
@@ -5580,7 +6131,6 @@ public partial class MainWindow : Window
 
         AppsPanel.Visibility = TabApps.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         RemotePanel.Visibility = TabRemote.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        UtilsPanel.Visibility = TabUtils.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         SystemPanel.Visibility = TabSystem.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         ScreenTimePanel.Visibility = TabScreenTime.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         CleanerPanel.Visibility = TabCleaner.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
@@ -5588,21 +6138,27 @@ public partial class MainWindow : Window
         if (TabApps.IsChecked == true)
         {
             SyncHomeAppsModeUi();
+            ApplyHomeWidgetLayout();
             SyncNotificationCenterUi();
+            SyncDiscordUiState();
             _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
         }
         if (TabRemote.IsChecked == true) _ = RefreshMediaAndDevicesAsync(forceBluetooth: false);
-        if (TabUtils.IsChecked == true) SyncDropShelfUi();
         if (TabSystem.IsChecked == true)
         {
             RefreshDrives();
             SyncQuickToolStates();
             RefreshSystemControlCenterUi(HardwareAndUtilityService.GetConnectedGamepads());
-            _ = RefreshMediaAndDevicesAsync(forceBluetooth: true);
+            _ = RefreshSystemAndMediaAsync();
         }
         if (TabScreenTime.IsChecked == true) RefreshScreenTimeUi();
-        if (TabCleaner.IsChecked == true) _ = RefreshCleanupScanAsync();
+        if (TabCleaner.IsChecked == true)
+        {
+            SyncAutoRamUi();
+            _ = RefreshCleanupScanAsync();
+        }
 
+        SyncEqTimerState();
         AnimateTabBodyEntrance();
         ScheduleExpandedResize(animate: true);
     }
@@ -5653,6 +6209,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private void HeaderActionsBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _isHeaderMenuOpen = !_isHeaderMenuOpen;
+        AnimatePanelReveal(HeaderActionsMenuBorder, _isHeaderMenuOpen, () => !_isHeaderMenuOpen);
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void CloseHeaderActionsMenu()
+    {
+        if (!_isHeaderMenuOpen) return;
+        _isHeaderMenuOpen = false;
+        AnimatePanelReveal(HeaderActionsMenuBorder, false, () => true);
+    }
+
+    private void MenuEditHome_Click(object sender, RoutedEventArgs e)
+    {
+        CloseHeaderActionsMenu();
+        TabApps.IsChecked = true;
+        EditAppsBtn.IsChecked = !(EditAppsBtn.IsChecked == true);
+        ScheduleExpandedResize(animate: true);
+    }
+
     private void EyeTopmostBtn_Click(object sender, RoutedEventArgs e)
     {
         bool next = !_settings.AlwaysOnTop;
@@ -5668,6 +6246,7 @@ public partial class MainWindow : Window
             EyeOuterPath.Fill = new SolidColorBrush(MediaColor.FromArgb(65, 56, 189, 248));
             EyePupil.Fill = new SolidColorBrush(MediaColor.FromRgb(248, 250, 252));
             EyeBtnBorder.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(56, 189, 248));
+            MenuEyeStateText.Text = "Поверх: Вкл";
             EyeTopmostBtn.ToolTip = "Поверх всех окон: ВКЛ (Ctrl+Alt+D — скрыть / вернуть)";
         }
         else
@@ -5676,6 +6255,7 @@ public partial class MainWindow : Window
             EyeOuterPath.Fill = MediaBrushes.Transparent;
             EyePupil.Fill = new SolidColorBrush(MediaColor.FromRgb(100, 116, 139));
             EyeBtnBorder.BorderBrush = MediaBrushes.Transparent;
+            MenuEyeStateText.Text = "Поверх: Выкл";
             EyeTopmostBtn.ToolTip = "Поверх всех окон: ВЫКЛ (Ctrl+Alt+D — вернуть поверх игры)";
         }
     }
@@ -5688,8 +6268,6 @@ public partial class MainWindow : Window
         {
             case "Remote":
             case "Media": TabRemote.IsChecked = true; break;
-            case "Utils":
-            case "Clipboard": TabUtils.IsChecked = true; break;
             case "System": TabSystem.IsChecked = true; break;
             case "ScreenTime": TabScreenTime.IsChecked = true; break;
             case "Cleaner": TabCleaner.IsChecked = true; break;
@@ -5747,6 +6325,7 @@ public partial class MainWindow : Window
 
     public void OpenSettingsWindow()
     {
+        CloseHeaderActionsMenu();
         var win = new SettingsWindow(
             _settings,
             onSave: updated =>
@@ -5757,33 +6336,20 @@ public partial class MainWindow : Window
                 _clipboardService.UpdateConfig(_settings.EnableClipboardHistory, _settings.ClipboardMaxItems);
                 ApplySettingsVisuals();
                 RebuildAppTiles();
+                ApplyHomeWidgetLayout();
                 _ = RefreshWeatherAsync();
+                SyncAutoRamUi();
                 ScheduleExpandedResize(animate: true);
                 if (!_isExpanded) UpdateCompactWidth(animate: true);
             },
             onExitApp: () => (System.Windows.Application.Current as App)?.ShutdownApplication());
-        win.ShowDialog();
+        win.Topmost = true;
+        _isModalDialogOpen = true;
+        try { win.ShowDialog(); }
+        finally { _isModalDialogOpen = false; }
     }
 
-    #region Home Tab Actions (Atoll 1.4 Style: Region/Screen Shot, Screen Translator RU⇄EN, Color Picker, Quick Command, Dock/Grid Switch)
-
-    private bool AddFileToDropShelf(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return false;
-        if (_dropShelfItems.Any(x => string.Equals(x.FullPath, path, StringComparison.OrdinalIgnoreCase)))
-            return false;
-
-        _dropShelfItems.Insert(0, new DropShelfItem
-        {
-            Name = IOPath.GetFileName(path),
-            FullPath = path,
-            IsFile = true
-        });
-        while (_dropShelfItems.Count > 10)
-            _dropShelfItems.RemoveAt(_dropShelfItems.Count - 1);
-        SyncDropShelfUi();
-        return true;
-    }
+    #region Home Tab Actions (Region/Screen Shot, Screen Translator RU⇄EN, Color Picker, Quick Command, Dock/Grid Switch)
 
     private void SyncHomeAppsModeUi()
     {
@@ -5857,7 +6423,6 @@ public partial class MainWindow : Window
         using (cropped)
         {
             var (path, _) = ScreenCaptureOcrService.SaveAndCopyBitmap(cropped, "Region");
-            AddFileToDropShelf(path);
             AddNotification("📷", "Скриншот", IOPath.GetFileName(path), "Скопировано в буфер и сохранено", "Открыть", () => OpenShellTarget(path), path);
             FlashIslandBorder(MediaColor.FromRgb(56, 189, 248));
             ShowToast("📷", $"Область скопирована и сохранена: {IOPath.GetFileName(path)}", "Открыть", () => OpenShellTarget(path), durationMs: 3600);
@@ -5875,10 +6440,9 @@ public partial class MainWindow : Window
 
         if (!string.IsNullOrEmpty(savedPath))
         {
-            AddFileToDropShelf(savedPath);
             AddNotification("🖥", "Скриншот", IOPath.GetFileName(savedPath), "Весь экран скопирован и сохранён", "Открыть", () => OpenShellTarget(savedPath), savedPath);
             FlashIslandBorder(MediaColor.FromRgb(167, 139, 250));
-            ShowToast("🖥", $"Скриншот в буфере и на полке: {IOPath.GetFileName(savedPath)}", "Открыть", () => OpenShellTarget(savedPath), durationMs: 3600);
+            ShowToast("🖥", $"Скриншот сохранён: {IOPath.GetFileName(savedPath)}", "Открыть", () => OpenShellTarget(savedPath), durationMs: 3600);
         }
     }
 
@@ -6101,8 +6665,371 @@ public partial class MainWindow : Window
 
     private void HomeWeatherCard_Click(object sender, MouseButtonEventArgs e)
     {
+        _isWeatherForecastOpen = !_isWeatherForecastOpen;
+        if (_currentWeather != null)
+            SyncWeatherForecastUi(_currentWeather);
+        else
+            _ = RefreshWeatherAsync();
+
+        HomeWeatherForecastDrawer.Visibility = _isWeatherForecastOpen ? Visibility.Visible : Visibility.Collapsed;
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void CloseWeatherDrawer_Click(object sender, RoutedEventArgs e)
+    {
+        _isWeatherForecastOpen = false;
+        HomeWeatherForecastDrawer.Visibility = Visibility.Collapsed;
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void RefreshWeatherManual_Click(object sender, RoutedEventArgs e)
+    {
         _ = RefreshWeatherAsync();
         ShowToast("⛅", "Обновление погоды...", durationMs: 1400);
+    }
+
+    private void SyncWeatherForecastUi(WeatherInfo w)
+    {
+        if (WeatherForecastCityTitle == null) return;
+        WeatherForecastCityTitle.Text = string.IsNullOrWhiteSpace(w.City)
+            ? $"Прогноз · {w.ConditionText}"
+            : $"{w.City} · {w.ConditionText}";
+        WeatherForecastDetailsText.Text = w.DetailsText;
+        WeatherHourlyControl.ItemsSource = w.Hourly;
+        WeatherDailyControl.ItemsSource = w.Daily;
+    }
+
+    private async void ToggleLyricsDrawer_Click(object sender, RoutedEventArgs e)
+    {
+        _isLyricsOpen = !_isLyricsOpen;
+        MediaLyricsDrawer.Visibility = _isLyricsOpen ? Visibility.Visible : Visibility.Collapsed;
+        ToggleLyricsBtn.Background = _isLyricsOpen ? BrushCtrlBlue : BrushAppDockTileBg;
+        ScheduleExpandedResize(animate: true);
+
+        if (_isLyricsOpen)
+        {
+            var track = await MediaControlService.GetCurrentTrackAsync(_settings.PreferredMediaPlayer);
+            if (!track.HasSession || string.IsNullOrWhiteSpace(track.Title))
+            {
+                LyricsStatusLabel.Text = "♫ ТЕКСТ ПЕСНИ";
+                LyricsPrevLineText.Text = string.Empty;
+                LyricsCurrLineText.Text = "Включите трек в плеере или браузере";
+                LyricsNextLineText.Text = string.Empty;
+                return;
+            }
+            string trackKey = $"{track.Title}|{track.Artist}";
+            _lastMediaPositionSec = track.PositionSeconds;
+            await EnsureLyricsLoadedAsync(track.Title, track.Artist, trackKey);
+        }
+    }
+
+    private async Task EnsureLyricsLoadedAsync(string title, string artist, string trackKey)
+    {
+        if (_lyricsFetchInFlight && string.Equals(_lyricsTrackKey, trackKey, StringComparison.Ordinal))
+            return;
+
+        _lyricsFetchInFlight = true;
+        _lyricsTrackKey = trackKey;
+        try
+        {
+            LyricsStatusLabel.Text = "♫ ЗАГРУЗКА ТЕКСТА...";
+            LyricsPrevLineText.Text = string.Empty;
+            LyricsCurrLineText.Text = $"{title}";
+            LyricsNextLineText.Text = string.IsNullOrWhiteSpace(artist) ? "Поиск на LRCLIB..." : artist;
+
+            var res = await LyricsService.GetLyricsAsync(title, artist);
+            if (!string.Equals(_lyricsTrackKey, trackKey, StringComparison.Ordinal))
+                return;
+
+            _currentLyrics = res;
+            if (!res.Found || res.Lines.Count == 0)
+            {
+                LyricsStatusLabel.Text = "♫ LRCLIB · НЕ НАЙДЕНО";
+                LyricsPrevLineText.Text = string.Empty;
+                LyricsCurrLineText.Text = "Текст для этого трека не найден";
+                LyricsNextLineText.Text = string.Empty;
+            }
+            else
+            {
+                LyricsStatusLabel.Text = res.IsSynced ? "♫ LRCLIB · СИНХРОННЫЙ ТЕКСТ" : "♫ LRCLIB · ТЕКСТ";
+                UpdateSyncedLyricsHighlight(_lastMediaPositionSec);
+            }
+            ScheduleExpandedResize(animate: true);
+        }
+        finally
+        {
+            _lyricsFetchInFlight = false;
+        }
+    }
+
+    private void UpdateSyncedLyricsHighlight(double positionSec)
+    {
+        if (!_isLyricsOpen || _currentLyrics == null || !_currentLyrics.Found || _currentLyrics.Lines.Count == 0)
+            return;
+
+        var lines = _currentLyrics.Lines;
+        int idx = 0;
+        if (_currentLyrics.IsSynced)
+        {
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].TimeSeconds <= positionSec + 0.35)
+                    idx = i;
+                else
+                    break;
+            }
+        }
+
+        LyricsPrevLineText.Text = idx > 0 ? lines[idx - 1].Text : string.Empty;
+        LyricsCurrLineText.Text = lines[idx].Text;
+        LyricsNextLineText.Text = idx + 1 < lines.Count ? lines[idx + 1].Text : string.Empty;
+    }
+
+    private void AddFileToShelf_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Win32.OpenFileDialog
+        {
+            Multiselect = true,
+            Title = "Добавить файлы на Полку"
+        };
+        bool? ok;
+        _isModalDialogOpen = true;
+        try { ok = dlg.ShowDialog(); }
+        finally { _isModalDialogOpen = false; }
+
+        if (ok == true && dlg.FileNames.Length > 0)
+            AddFilesToShelf(dlg.FileNames);
+    }
+
+    private void ClearFileShelf_Click(object sender, RoutedEventArgs e)
+    {
+        _shelfItems.Clear();
+        RebuildFileShelfUi();
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void AddFilesToShelf(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            if (!File.Exists(path) && !Directory.Exists(path)) continue;
+            if (_shelfItems.Any(x => string.Equals(x.FullPath, path, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            _shelfItems.Insert(0, new DropShelfItem
+            {
+                Name = IOPath.GetFileName(path.TrimEnd('\\')) is { Length: > 0 } n ? n : path,
+                FullPath = path,
+                IsFile = true
+            });
+        }
+        if (_shelfItems.Count > 6)
+            _shelfItems.RemoveRange(6, _shelfItems.Count - 6);
+
+        RebuildFileShelfUi();
+        if (_isExpanded) ScheduleExpandedResize(animate: true);
+    }
+
+    private void RebuildFileShelfUi()
+    {
+        if (FileShelfItemsPanel == null) return;
+        FileShelfItemsPanel.Children.Clear();
+        bool hasItems = _shelfItems.Count > 0;
+        FileShelfItemsPanel.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
+        ClearFileShelfBtn.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
+        FileShelfHintText.Text = hasItems
+            ? $"На полке {_shelfItems.Count} файл(ов) — потяните карточку в чат или папку"
+            : "Перетащите файл на островок или выберите — затем тащите в Telegram/папку";
+
+        foreach (var item in _shelfItems)
+        {
+            var chip = new Border
+            {
+                Background = BrushAppDockTileBg,
+                BorderBrush = BrushAppDockTileBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(8, 5, 6, 5),
+                Margin = new Thickness(0, 0, 5, 5),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = $"{item.FullPath}\nПотяните в другую программу или нажмите ✕ чтобы убрать"
+            };
+
+            var row = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+            row.Children.Add(new TextBlock
+            {
+                Text = item.IconGlyph,
+                FontSize = 11.5,
+                Margin = new Thickness(0, 0, 5, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            row.Children.Add(new TextBlock
+            {
+                Text = item.Name,
+                FontSize = 10.2,
+                FontWeight = FontWeights.Medium,
+                Foreground = BrushTextWhiteLight,
+                MaxWidth = 115,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var removeBtn = new System.Windows.Controls.Button
+            {
+                Content = "✕",
+                Style = (Style)FindResource("DarkButton"),
+                Background = MediaBrushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(5, 0, 2, 0),
+                FontSize = 9,
+                Foreground = BrushDiscordDimGray,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var capturedPath = item.FullPath;
+            removeBtn.Click += (_, ev) =>
+            {
+                ev.Handled = true;
+                _shelfItems.RemoveAll(s => string.Equals(s.FullPath, capturedPath, StringComparison.OrdinalIgnoreCase));
+                RebuildFileShelfUi();
+                ScheduleExpandedResize(animate: true);
+            };
+            row.Children.Add(removeBtn);
+            chip.Child = row;
+
+            chip.PreviewMouseLeftButtonDown += (_, ev) =>
+            {
+                _shelfDragStart = ev.GetPosition(chip);
+                _shelfDragPath = capturedPath;
+            };
+            chip.PreviewMouseMove += (_, ev) =>
+            {
+                if (ev.LeftButton != MouseButtonState.Pressed || _shelfDragStart == null || _shelfDragPath != capturedPath)
+                    return;
+                var pos = ev.GetPosition(chip);
+                if (Math.Abs(pos.X - _shelfDragStart.Value.X) > 6 || Math.Abs(pos.Y - _shelfDragStart.Value.Y) > 6)
+                {
+                    _shelfDragStart = null;
+                    _shelfDragPath = null;
+                    try
+                    {
+                        var data = new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { capturedPath });
+                        System.Windows.DragDrop.DoDragDrop(chip, data, System.Windows.DragDropEffects.Copy | System.Windows.DragDropEffects.Link);
+                    }
+                    catch { }
+                }
+            };
+            chip.MouseLeftButtonUp += (_, _) =>
+            {
+                _shelfDragStart = null;
+                _shelfDragPath = null;
+            };
+            chip.MouseEnter += (_, _) =>
+            {
+                chip.Background = BrushAppDockTileHoverBg;
+                chip.BorderBrush = BrushAppDockTileHoverBorder;
+            };
+            chip.MouseLeave += (_, _) =>
+            {
+                chip.Background = BrushAppDockTileBg;
+                chip.BorderBrush = BrushAppDockTileBorder;
+            };
+
+            FileShelfItemsPanel.Children.Add(chip);
+        }
+    }
+
+    private void QuickNoteInputBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (QuickNotePlaceholder != null)
+            QuickNotePlaceholder.Visibility = string.IsNullOrEmpty(QuickNoteInputBox.Text) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void QuickNoteInputBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            AddQuickNote_Click(sender, e);
+            e.Handled = true;
+        }
+    }
+
+    private void AddQuickNote_Click(object sender, RoutedEventArgs e)
+    {
+        string raw = (QuickNoteInputBox.Text ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(raw)) return;
+        _settings.QuickNotes ??= new();
+        _settings.QuickNotes.Insert(0, new QuickNoteItem { Text = raw, IsDone = false });
+        if (_settings.QuickNotes.Count > 12)
+            _settings.QuickNotes.RemoveRange(12, _settings.QuickNotes.Count - 12);
+        QuickNoteInputBox.Text = string.Empty;
+        SettingsService.Save(_settings);
+        RebuildQuickNotesUi();
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void RebuildQuickNotesUi()
+    {
+        if (QuickNotesListPanel == null) return;
+        QuickNotesListPanel.Children.Clear();
+        _settings.QuickNotes ??= new();
+
+        int activeCount = _settings.QuickNotes.Count(n => !n.IsDone);
+        QuickNotesCountText.Text = _settings.QuickNotes.Count > 0 ? $"Активно: {activeCount}/{_settings.QuickNotes.Count}" : "Пусто";
+
+        foreach (var note in _settings.QuickNotes.ToList())
+        {
+            var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var cb = new System.Windows.Controls.CheckBox
+            {
+                IsChecked = note.IsDone,
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Content = new TextBlock
+                {
+                    Text = note.Text,
+                    FontSize = 10.5,
+                    Foreground = note.IsDone ? BrushNoteDoneText : BrushTextWhiteLight,
+                    TextDecorations = note.IsDone ? TextDecorations.Strikethrough : null,
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 340
+                }
+            };
+            cb.Click += (_, _) =>
+            {
+                note.IsDone = cb.IsChecked == true;
+                SettingsService.Save(_settings);
+                RebuildQuickNotesUi();
+            };
+
+            var delBtn = new System.Windows.Controls.Button
+            {
+                Content = "✕",
+                Style = (Style)FindResource("DarkButton"),
+                Background = MediaBrushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 1, 6, 1),
+                FontSize = 9.2,
+                Foreground = BrushDiscordDimGray,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            delBtn.Click += (_, _) =>
+            {
+                _settings.QuickNotes.RemoveAll(n => n.Id == note.Id);
+                SettingsService.Save(_settings);
+                RebuildQuickNotesUi();
+                ScheduleExpandedResize(animate: true);
+            };
+
+            Grid.SetColumn(cb, 0);
+            Grid.SetColumn(delBtn, 1);
+            row.Children.Add(cb);
+            row.Children.Add(delBtn);
+            QuickNotesListPanel.Children.Add(row);
+        }
     }
 
     private void CollapseIslandBtn_Click(object sender, RoutedEventArgs e)
@@ -6124,17 +7051,32 @@ public partial class MainWindow : Window
         ScheduleExpandedResize(animate: true);
     }
 
-    private void SystemDetailsToggle_Click(object sender, RoutedEventArgs e)
+    private void SysDrivesToggle_Click(object sender, RoutedEventArgs e)
     {
-        _isSystemDetailsExpanded = !_isSystemDetailsExpanded;
-        AnimatePanelReveal(SystemDetailsSection, _isSystemDetailsExpanded, () => !_isSystemDetailsExpanded);
-        SystemDetailsToggleBtn.Content = _isSystemDetailsExpanded
-            ? "Скрыть диски, сеть и процессы ▴"
-            : "Диски, сеть и процессы ▾";
-        if (_isSystemDetailsExpanded)
+        _isSysDrivesExpanded = !_isSysDrivesExpanded;
+        AnimatePanelReveal(SysDrivesSection, _isSysDrivesExpanded, () => !_isSysDrivesExpanded);
+        SysDrivesToggleBtn.Content = _isSysDrivesExpanded
+            ? "Скрыть локальные диски ▴"
+            : "Локальные диски ▾";
+        if (_isSysDrivesExpanded)
         {
             RefreshDrives();
         }
+        ScheduleExpandedResize(animate: true);
+    }
+
+    private void SysProcessesToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _isSysProcessesExpanded = !_isSysProcessesExpanded;
+        AnimatePanelReveal(SysProcessesSection, _isSysProcessesExpanded, () => !_isSysProcessesExpanded);
+        SysProcessesToggleBtn.Content = _isSysProcessesExpanded
+            ? "Скрыть процессы по ОЗУ ▴"
+            : "Процессы по ОЗУ (Топ-3) ▾";
+        if (_isSysProcessesExpanded)
+        {
+            RefreshDrives();
+        }
+        ScheduleExpandedResize(animate: true);
     }
 
     private async void CtrlWifi_Click(object sender, RoutedEventArgs e)
@@ -6189,56 +7131,28 @@ public partial class MainWindow : Window
             QuickToolsService.ShutdownPc();
     }
 
-    private void RefreshSystemControlCenterUi(List<(int Index, int BatteryPercent, bool IsWired)> gamepads)
+    private void RefreshSystemControlCenterUi(
+        List<(int Index, int BatteryPercent, bool IsWired)> gamepads,
+        (bool IsRunning, bool InVoice)? preSampledDiscord = null)
     {
         // Network / Wi-Fi / Airplane / VPN state
         var net = QuickToolsService.GetControlCenterNetworkStatus();
         bool wifiActive = net.WifiOn || net.LanConnected;
-        CtrlWifiCircle.Background = wifiActive
-            ? new SolidColorBrush(MediaColor.FromRgb(37, 99, 235))
-            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        CtrlWifiCircle.Background = wifiActive ? BrushCtrlBlue : BrushCtrlDark;
         CtrlWifiLabel.Text = net.WifiOn ? "Wi-Fi Вкл" : (net.LanConnected ? "Сеть Вкл" : "Wi-Fi Выкл");
 
         bool btOn = BtStateText.Text.Contains("Вкл", StringComparison.OrdinalIgnoreCase)
             || (!BtStateText.Text.Contains("Выкл", StringComparison.OrdinalIgnoreCase) && _allBtDevices.Count > 0);
-        CtrlBtCircle.Background = btOn
-            ? new SolidColorBrush(MediaColor.FromRgb(37, 99, 235))
-            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        CtrlBtCircle.Background = btOn ? BrushCtrlBlue : BrushCtrlDark;
         CtrlBtLabel.Text = btOn ? "BT Вкл" : "Bluetooth";
 
-        CtrlAirplaneCircle.Background = net.AirplaneOn
-            ? new SolidColorBrush(MediaColor.FromRgb(217, 119, 6))
-            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        CtrlAirplaneCircle.Background = net.AirplaneOn ? BrushCtrlAmber : BrushCtrlDark;
 
-        CtrlVpnCircle.Background = net.VpnActive
-            ? new SolidColorBrush(MediaColor.FromRgb(22, 163, 74))  // Bright Green when VPN active (like Screenshot 5)
-            : new SolidColorBrush(MediaColor.FromRgb(37, 39, 48));
+        CtrlVpnCircle.Background = net.VpnActive ? BrushCtrlGreen : BrushCtrlDark;
         CtrlVpnLabel.Text = net.VpnActive ? net.VpnLabel : "VPN";
 
-        // Discord voice status & interactive controls
-        var (discordRunning, discordInVoice) = HardwareAndUtilityService.GetDiscordVoiceStatus();
-        if (discordInVoice)
-        {
-            DiscordVoiceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(74, 222, 128));
-            DiscordStatusText.Text = "В голосовом канале · нажми для перехода";
-            DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(74, 222, 128));
-            DiscordVoiceControlsPanel.Visibility = Visibility.Visible;
-            SyncDiscordVoiceButtonsUi();
-        }
-        else if (discordRunning)
-        {
-            DiscordVoiceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(96, 165, 250));
-            DiscordStatusText.Text = "Запущен · открыть окно";
-            DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(161, 161, 170));
-            DiscordVoiceControlsPanel.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            DiscordVoiceDot.Fill = new SolidColorBrush(MediaColor.FromRgb(82, 82, 91));
-            DiscordStatusText.Text = "Не запущен · открыть Discord";
-            DiscordStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(113, 113, 122));
-            DiscordVoiceControlsPanel.Visibility = Visibility.Collapsed;
-        }
+        // Discord voice status & interactive controls (both System and live Home banner)
+        SyncDiscordUiState(preSampledDiscord);
 
         // Gamepads extra battery summary (Bluetooth devices are listed directly above inside BtDevicesList)
         var batParts = new List<string>();
@@ -6252,27 +7166,66 @@ public partial class MainWindow : Window
         SysBatterySummaryText.Visibility = batParts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void SyncDiscordUiState((bool IsRunning, bool InVoice)? preSampledDiscord = null)
+    {
+        var (discordRunning, discordInVoice) = preSampledDiscord ?? HardwareAndUtilityService.GetDiscordVoiceStatus();
+        bool wasVisible = HomeDiscordVoiceCard.Visibility == Visibility.Visible;
+        HomeDiscordVoiceCard.Visibility = discordInVoice ? Visibility.Visible : Visibility.Collapsed;
+
+        if (discordInVoice)
+        {
+            DiscordVoiceDot.Fill = BrushFpsGood;
+            DiscordStatusText.Text = "В голосовом канале · нажми для перехода";
+            DiscordStatusText.Foreground = BrushFpsGood;
+            DiscordVoiceControlsPanel.Visibility = Visibility.Visible;
+            SyncDiscordVoiceButtonsUi();
+        }
+        else if (discordRunning)
+        {
+            DiscordVoiceDot.Fill = BrushDiscordBlue;
+            DiscordStatusText.Text = "Запущен · открыть окно";
+            DiscordStatusText.Foreground = BrushDiscordDimGray;
+            DiscordVoiceControlsPanel.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            DiscordVoiceDot.Fill = BrushDiscordOffDot;
+            DiscordStatusText.Text = "Не запущен · открыть Discord";
+            DiscordStatusText.Foreground = BrushNeutralDot;
+            DiscordVoiceControlsPanel.Visibility = Visibility.Collapsed;
+        }
+
+        if (_isExpanded && TabApps.IsChecked == true && wasVisible != (HomeDiscordVoiceCard.Visibility == Visibility.Visible))
+            ScheduleExpandedResize(animate: true);
+    }
+
     private void SyncDiscordVoiceButtonsUi()
     {
         bool micMuted = CoreAudioService.IsMicMuted();
         bool discordMuted = CoreAudioService.IsProcessMuted("Discord");
 
-        DiscordMuteMicBtn.Content = micMuted ? "🔇 Микр вкл" : "🎙 Загл. микр";
-        DiscordMuteMicBtn.Background = micMuted
-            ? new SolidColorBrush(MediaColor.FromRgb(127, 29, 29))
-            : new SolidColorBrush(MediaColor.FromRgb(34, 36, 46));
-        DiscordMuteMicBtn.Foreground = micMuted
-            ? new SolidColorBrush(MediaColor.FromRgb(254, 202, 202))
-            : new SolidColorBrush(MediaColor.FromRgb(228, 228, 231));
+        string micText = micMuted ? "🔇 Микр вкл" : "🎙 Загл. микр";
+        var micBg = micMuted ? BrushDiscordBtnRedBg : BrushDiscordBtnDarkBg;
+        var micFg = micMuted ? BrushDiscordBtnRedFg : BrushTextWhiteLight;
+
+        DiscordMuteMicBtn.Content = micText;
+        DiscordMuteMicBtn.Background = micBg;
+        DiscordMuteMicBtn.Foreground = micFg;
+        HomeDiscordMuteMicBtn.Content = micText;
+        HomeDiscordMuteMicBtn.Background = micMuted ? micBg : BrushDiscordBtnGreenBg;
+        HomeDiscordMuteMicBtn.Foreground = micFg;
 
         bool deafened = discordMuted && micMuted;
-        DiscordDeafenBtn.Content = deafened ? "🔊 Вкл всё" : "🔕 Микр+Звук";
-        DiscordDeafenBtn.Background = deafened
-            ? new SolidColorBrush(MediaColor.FromRgb(127, 29, 29))
-            : new SolidColorBrush(MediaColor.FromRgb(34, 36, 46));
-        DiscordDeafenBtn.Foreground = deafened
-            ? new SolidColorBrush(MediaColor.FromRgb(254, 202, 202))
-            : new SolidColorBrush(MediaColor.FromRgb(228, 228, 231));
+        string deafText = deafened ? "🔊 Вкл всё" : "🔕 Микр+Звук";
+        var deafBg = deafened ? BrushDiscordBtnRedBg : BrushDiscordBtnDarkBg;
+        var deafFg = deafened ? BrushDiscordBtnRedFg : BrushTextWhiteLight;
+
+        DiscordDeafenBtn.Content = deafText;
+        DiscordDeafenBtn.Background = deafBg;
+        DiscordDeafenBtn.Foreground = deafFg;
+        HomeDiscordDeafenBtn.Content = deafText;
+        HomeDiscordDeafenBtn.Background = deafened ? deafBg : BrushDiscordBtnGreenBg;
+        HomeDiscordDeafenBtn.Foreground = deafFg;
     }
 
     private void DiscordCard_Click(object sender, MouseButtonEventArgs e)

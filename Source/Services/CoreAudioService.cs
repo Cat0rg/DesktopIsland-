@@ -165,6 +165,21 @@ public static class CoreAudioService
         int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string pszDeviceName, ERole role);
     }
 
+    private static int _renderMeterVersion;
+    [ThreadStatic] private static IAudioMeterInformation? t_renderMeter;
+    [ThreadStatic] private static int t_renderMeterVersion;
+    [ThreadStatic] private static long t_renderMeterAcquiredMs;
+
+    private static void ReleaseCom(object? obj)
+    {
+        if (obj != null && Marshal.IsComObject(obj))
+        {
+            try { Marshal.ReleaseComObject(obj); } catch { }
+        }
+    }
+
+    public static void InvalidateRenderMeterCache() => System.Threading.Interlocked.Increment(ref _renderMeterVersion);
+
     private static IMMDeviceEnumerator? CreateEnumerator()
     {
         var type = Type.GetTypeFromCLSID(CLSID_MMDeviceEnumerator);
@@ -173,13 +188,16 @@ public static class CoreAudioService
 
     public static int GetMasterVolumePercent()
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return 0;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0) return 0;
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev) != 0 || dev == null) return 0;
             var iid = IID_IAudioEndpointVolume;
-            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out obj);
             if (obj is IAudioEndpointVolume vol)
             {
                 vol.GetMasterVolumeLevelScalar(out float level);
@@ -187,18 +205,27 @@ public static class CoreAudioService
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
         return 0;
     }
 
     public static int ChangeMasterVolume(int deltaPercent)
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return 0;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0) return 0;
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev) != 0 || dev == null) return 0;
             var iid = IID_IAudioEndpointVolume;
-            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out obj);
             if (obj is IAudioEndpointVolume vol)
             {
                 vol.GetMasterVolumeLevelScalar(out float cur);
@@ -210,18 +237,27 @@ public static class CoreAudioService
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
         return GetMasterVolumePercent();
     }
 
     public static void SetMasterVolumePercent(int percent)
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0) return;
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev) != 0 || dev == null) return;
             var iid = IID_IAudioEndpointVolume;
-            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out obj);
             if (obj is IAudioEndpointVolume vol)
             {
                 float next = Math.Clamp(percent / 100f, 0f, 1f);
@@ -231,39 +267,81 @@ public static class CoreAudioService
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
     }
 
     public static float GetRenderPeakLevel()
     {
         try
         {
-            var en = CreateEnumerator();
-            if (en == null) return 0f;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0) return 0f;
-            var iid = IID_IAudioMeterInformation;
-            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
-            if (obj is IAudioMeterInformation meter)
+            int curVersion = System.Threading.Volatile.Read(ref _renderMeterVersion);
+            long now = Environment.TickCount64;
+            if (t_renderMeter == null || t_renderMeterVersion != curVersion || now - t_renderMeterAcquiredMs >= 3000)
             {
-                meter.GetPeakValue(out float peak);
-                return Math.Clamp(peak, 0f, 1f);
+                ReleaseCom(t_renderMeter);
+                t_renderMeter = null;
+
+                IMMDeviceEnumerator? en = null;
+                IMMDevice? dev = null;
+                try
+                {
+                    en = CreateEnumerator();
+                    if (en != null && en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev) == 0 && dev != null)
+                    {
+                        var iid = IID_IAudioMeterInformation;
+                        dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+                        if (obj is IAudioMeterInformation meter)
+                        {
+                            t_renderMeter = meter;
+                            t_renderMeterVersion = curVersion;
+                            t_renderMeterAcquiredMs = now;
+                        }
+                        else
+                        {
+                            ReleaseCom(obj);
+                        }
+                    }
+                }
+                finally
+                {
+                    ReleaseCom(dev);
+                    ReleaseCom(en);
+                }
             }
+
+            if (t_renderMeter != null && t_renderMeter.GetPeakValue(out float peak) == 0)
+                return Math.Clamp(peak, 0f, 1f);
         }
-        catch { }
+        catch
+        {
+            ReleaseCom(t_renderMeter);
+            t_renderMeter = null;
+        }
         return 0f;
     }
 
     public static bool IsMicMuted()
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return false;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eCommunications, out var dev) != 0)
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eCommunications, out dev) != 0 || dev == null)
             {
-                if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eConsole, out dev) != 0) return false;
+                ReleaseCom(dev);
+                dev = null;
+                if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eConsole, out dev) != 0 || dev == null) return false;
             }
             var iid = IID_IAudioEndpointVolume;
-            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out obj);
             if (obj is IAudioEndpointVolume vol)
             {
                 vol.GetMute(out bool muted);
@@ -271,6 +349,12 @@ public static class CoreAudioService
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
         return false;
     }
 
@@ -283,16 +367,21 @@ public static class CoreAudioService
 
     public static bool SetMicMute(bool mute)
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return false;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eCommunications, out var dev) != 0)
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eCommunications, out dev) != 0 || dev == null)
             {
-                if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eConsole, out dev) != 0) return false;
+                ReleaseCom(dev);
+                dev = null;
+                if (en.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eConsole, out dev) != 0 || dev == null) return false;
             }
             var iid = IID_IAudioEndpointVolume;
-            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var obj);
+            dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out obj);
             if (obj is IAudioEndpointVolume vol)
             {
                 var ctx = Guid.Empty;
@@ -301,74 +390,102 @@ public static class CoreAudioService
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
         return false;
     }
 
     public static List<AudioDeviceItem> GetPlaybackDevices()
     {
         var list = new List<AudioDeviceItem>();
+        IMMDeviceEnumerator? en = null;
+        IMMDeviceCollection? col = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return list;
 
             string defaultId = string.Empty;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var defDev) == 0)
-                defDev.GetId(out defaultId);
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var defDev) == 0 && defDev != null)
+            {
+                try { defDev.GetId(out defaultId); }
+                finally { ReleaseCom(defDev); }
+            }
 
             // DEVICE_STATE_ACTIVE = 0x1
-            if (en.EnumAudioEndpoints(EDataFlow.eRender, 1, out var col) != 0) return list;
+            if (en.EnumAudioEndpoints(EDataFlow.eRender, 1, out col) != 0 || col == null) return list;
             col.GetCount(out uint count);
 
             var pkeyFriendly = new PROPERTYKEY { fmtid = new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"), pid = 14 };
             for (uint i = 0; i < count; i++)
             {
-                col.Item(i, out var dev);
-                dev.GetId(out var id);
-                string name = $"Устройство #{i + 1}";
+                IMMDevice? dev = null;
+                IPropertyStore? props = null;
                 try
                 {
-                    if (dev.OpenPropertyStore(STGM_READ, out var props) == 0 && props.GetValue(ref pkeyFriendly, out var pv) == 0)
+                    if (col.Item(i, out dev) != 0 || dev == null) continue;
+                    dev.GetId(out var id);
+                    string name = $"Устройство #{i + 1}";
+                    try
                     {
-                        if (pv.vt == 31 && pv.p1 != IntPtr.Zero) // VT_LPWSTR
-                            name = Marshal.PtrToStringUni(pv.p1) ?? name;
-                        PropVariantClear(ref pv);
+                        if (dev.OpenPropertyStore(STGM_READ, out props) == 0 && props != null && props.GetValue(ref pkeyFriendly, out var pv) == 0)
+                        {
+                            if (pv.vt == 31 && pv.p1 != IntPtr.Zero) // VT_LPWSTR
+                                name = Marshal.PtrToStringUni(pv.p1) ?? name;
+                            PropVariantClear(ref pv);
+                        }
                     }
+                    catch { }
+
+                    bool isHeadphones = name.Contains("Headphone", StringComparison.OrdinalIgnoreCase)
+                                     || name.Contains("Headset", StringComparison.OrdinalIgnoreCase)
+                                     || name.Contains("Наушник", StringComparison.OrdinalIgnoreCase)
+                                     || name.Contains("Гарнитур", StringComparison.OrdinalIgnoreCase)
+                                     || name.Contains("AirPods", StringComparison.OrdinalIgnoreCase)
+                                     || name.Contains("Ear", StringComparison.OrdinalIgnoreCase);
+
+                    list.Add(new AudioDeviceItem
+                    {
+                        Id = id,
+                        Name = name,
+                        IsDefault = string.Equals(id, defaultId, StringComparison.OrdinalIgnoreCase),
+                        IsHeadphones = isHeadphones
+                    });
                 }
-                catch { }
-
-                bool isHeadphones = name.Contains("Headphone", StringComparison.OrdinalIgnoreCase)
-                                 || name.Contains("Headset", StringComparison.OrdinalIgnoreCase)
-                                 || name.Contains("Наушник", StringComparison.OrdinalIgnoreCase)
-                                 || name.Contains("Гарнитур", StringComparison.OrdinalIgnoreCase)
-                                 || name.Contains("AirPods", StringComparison.OrdinalIgnoreCase)
-                                 || name.Contains("Ear", StringComparison.OrdinalIgnoreCase);
-
-                list.Add(new AudioDeviceItem
+                finally
                 {
-                    Id = id,
-                    Name = name,
-                    IsDefault = string.Equals(id, defaultId, StringComparison.OrdinalIgnoreCase),
-                    IsHeadphones = isHeadphones
-                });
+                    ReleaseCom(props);
+                    ReleaseCom(dev);
+                }
             }
         }
         catch (Exception ex)
         {
             LoggerService.Error("Failed to enumerate playback devices", ex);
         }
+        finally
+        {
+            ReleaseCom(col);
+            ReleaseCom(en);
+        }
         return list;
     }
 
     public static string? GetActiveCaptureProcessName()
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDeviceCollection? col = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return null;
 
             // Enumerate all active capture devices (microphone, headset mic, line-in)
-            if (en.EnumAudioEndpoints(EDataFlow.eCapture, 1 /* DEVICE_STATE_ACTIVE */, out var col) != 0)
+            if (en.EnumAudioEndpoints(EDataFlow.eCapture, 1 /* DEVICE_STATE_ACTIVE */, out col) != 0 || col == null)
                 return null;
 
             col.GetCount(out uint devCount);
@@ -377,54 +494,78 @@ public static class CoreAudioService
 
             for (uint d = 0; d < devCount; d++)
             {
-                if (col.Item(d, out var dev) != 0 || dev == null) continue;
+                IMMDevice? dev = null;
+                object? mgrObj = null;
+                IAudioSessionEnumerator? sessionEnum = null;
                 try
                 {
-                    if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+                    if (col.Item(d, out dev) != 0 || dev == null) continue;
+                    if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out mgrObj) != 0 || mgrObj is not IAudioSessionManager2 mgr)
                         continue;
 
-                    if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+                    if (mgr.GetSessionEnumerator(out sessionEnum) != 0 || sessionEnum == null)
                         continue;
 
                     sessionEnum.GetCount(out int count);
                     for (int i = 0; i < count; i++)
                     {
-                        if (sessionEnum.GetSession(i, out var ctrl) != 0 || ctrl == null)
-                            continue;
-
-                        if (ctrl.GetState(out int state) == 0 && state == 1 /* AudioSessionStateActive */ &&
-                            ctrl is IAudioSessionControl2 c2 &&
-                            c2.GetProcessId(out uint pid) == 0 && pid != 0 && pid != ownPid)
+                        IAudioSessionControl? ctrl = null;
+                        try
                         {
-                            try
+                            if (sessionEnum.GetSession(i, out ctrl) != 0 || ctrl == null)
+                                continue;
+
+                            if (ctrl.GetState(out int state) == 0 && state == 1 /* AudioSessionStateActive */ &&
+                                ctrl is IAudioSessionControl2 c2 &&
+                                c2.GetProcessId(out uint pid) == 0 && pid != 0 && pid != ownPid)
                             {
-                                using var proc = Process.GetProcessById((int)pid);
-                                if (!string.IsNullOrWhiteSpace(proc.ProcessName))
-                                    return proc.ProcessName;
+                                try
+                                {
+                                    using var proc = Process.GetProcessById((int)pid);
+                                    if (!string.IsNullOrWhiteSpace(proc.ProcessName))
+                                        return proc.ProcessName;
+                                }
+                                catch { }
                             }
-                            catch { }
+                        }
+                        finally
+                        {
+                            ReleaseCom(ctrl);
                         }
                     }
                 }
                 catch { }
+                finally
+                {
+                    ReleaseCom(sessionEnum);
+                    ReleaseCom(mgrObj);
+                    ReleaseCom(dev);
+                }
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(col);
+            ReleaseCom(en);
+        }
         return null;
     }
 
     public static bool SetDefaultPlaybackDevice(string deviceId)
     {
+        object? obj = null;
         try
         {
             var type = Type.GetTypeFromCLSID(CLSID_PolicyConfigClient);
             if (type == null) return false;
-            var obj = Activator.CreateInstance(type);
+            obj = Activator.CreateInstance(type);
             if (obj is IPolicyConfig pc)
             {
                 pc.SetDefaultEndpoint(deviceId, ERole.eConsole);
                 pc.SetDefaultEndpoint(deviceId, ERole.eMultimedia);
                 pc.SetDefaultEndpoint(deviceId, ERole.eCommunications);
+                InvalidateRenderMeterCache();
                 return true;
             }
         }
@@ -432,39 +573,54 @@ public static class CoreAudioService
         {
             LoggerService.Error($"Failed to switch audio device {deviceId}", ex);
         }
+        finally
+        {
+            ReleaseCom(obj);
+        }
         return false;
     }
 
     public static string GetDefaultPlaybackDeviceId()
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? defDev = null;
         try
         {
-            var en = CreateEnumerator();
-            if (en != null && en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var defDev) == 0)
+            en = CreateEnumerator();
+            if (en != null && en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out defDev) == 0 && defDev != null)
             {
                 defDev.GetId(out var id);
                 return id ?? string.Empty;
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(defDev);
+            ReleaseCom(en);
+        }
         return string.Empty;
     }
 
     public static List<AudioSessionItem> GetAudioRenderSessions()
     {
         var items = new List<AudioSessionItem>();
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
+        IAudioSessionEnumerator? sessionEnum = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return items;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0 || dev == null)
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev) != 0 || dev == null)
                 return items;
 
             var iidMgr = IID_IAudioSessionManager2;
-            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out obj) != 0 || obj is not IAudioSessionManager2 mgr)
                 return items;
 
-            if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+            if (mgr.GetSessionEnumerator(out sessionEnum) != 0 || sessionEnum == null)
                 return items;
 
             sessionEnum.GetCount(out int count);
@@ -473,44 +629,59 @@ public static class CoreAudioService
 
             for (int i = 0; i < count; i++)
             {
-                if (sessionEnum.GetSession(i, out var ctrl) != 0 || ctrl == null)
-                    continue;
-
-                if (ctrl.GetState(out int state) != 0 || state == 2 /* AudioSessionStateExpired */)
-                    continue;
-
-                if (ctrl is IAudioSessionControl2 c2 && c2.GetProcessId(out uint pid) == 0 && pid != 0 && pid != ownPid)
+                IAudioSessionControl? ctrl = null;
+                try
                 {
-                    if (!seenPids.Add((int)pid)) continue;
-                    string procName = $"PID {pid}";
-                    try
-                    {
-                        using var proc = Process.GetProcessById((int)pid);
-                        if (!string.IsNullOrWhiteSpace(proc.ProcessName))
-                            procName = proc.ProcessName;
-                    }
-                    catch { continue; }
+                    if (sessionEnum.GetSession(i, out ctrl) != 0 || ctrl == null)
+                        continue;
 
-                    int volPct = 100;
-                    bool muted = false;
-                    if (ctrl is ISimpleAudioVolume sav)
-                    {
-                        sav.GetMasterVolume(out float lvl);
-                        sav.GetMute(out muted);
-                        volPct = Math.Clamp((int)Math.Round(lvl * 100f), 0, 100);
-                    }
+                    if (ctrl.GetState(out int state) != 0 || state == 2 /* AudioSessionStateExpired */)
+                        continue;
 
-                    items.Add(new AudioSessionItem
+                    if (ctrl is IAudioSessionControl2 c2 && c2.GetProcessId(out uint pid) == 0 && pid != 0 && pid != ownPid)
                     {
-                        Pid = (int)pid,
-                        ProcessName = procName,
-                        VolumePercent = volPct,
-                        IsMuted = muted
-                    });
+                        if (!seenPids.Add((int)pid)) continue;
+                        string procName = $"PID {pid}";
+                        try
+                        {
+                            using var proc = Process.GetProcessById((int)pid);
+                            if (!string.IsNullOrWhiteSpace(proc.ProcessName))
+                                procName = proc.ProcessName;
+                        }
+                        catch { continue; }
+
+                        int volPct = 100;
+                        bool muted = false;
+                        if (ctrl is ISimpleAudioVolume sav)
+                        {
+                            sav.GetMasterVolume(out float lvl);
+                            sav.GetMute(out muted);
+                            volPct = Math.Clamp((int)Math.Round(lvl * 100f), 0, 100);
+                        }
+
+                        items.Add(new AudioSessionItem
+                        {
+                            Pid = (int)pid,
+                            ProcessName = procName,
+                            VolumePercent = volPct,
+                            IsMuted = muted
+                        });
+                    }
+                }
+                finally
+                {
+                    ReleaseCom(ctrl);
                 }
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(sessionEnum);
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
         return items.OrderBy(a => a.ProcessName).Take(6).ToList();
     }
 
@@ -564,71 +735,109 @@ public static class CoreAudioService
 
     private static void OperateOnProcessNameSessions(string processKeyword, Action<ISimpleAudioVolume> action)
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
+        IAudioSessionEnumerator? sessionEnum = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0 || dev == null)
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev) != 0 || dev == null)
                 return;
 
             var iidMgr = IID_IAudioSessionManager2;
-            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out obj) != 0 || obj is not IAudioSessionManager2 mgr)
                 return;
 
-            if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+            if (mgr.GetSessionEnumerator(out sessionEnum) != 0 || sessionEnum == null)
                 return;
 
             sessionEnum.GetCount(out int count);
             for (int i = 0; i < count; i++)
             {
-                if (sessionEnum.GetSession(i, out var ctrl) == 0 &&
-                    ctrl is IAudioSessionControl2 c2 &&
-                    c2.GetProcessId(out uint pid) == 0 &&
-                    pid > 0 &&
-                    ctrl is ISimpleAudioVolume sav)
+                IAudioSessionControl? ctrl = null;
+                try
                 {
-                    try
+                    if (sessionEnum.GetSession(i, out ctrl) == 0 &&
+                        ctrl is IAudioSessionControl2 c2 &&
+                        c2.GetProcessId(out uint pid) == 0 &&
+                        pid > 0 &&
+                        ctrl is ISimpleAudioVolume sav)
                     {
-                        using var p = Process.GetProcessById((int)pid);
-                        if (p.ProcessName.Contains(processKeyword, StringComparison.OrdinalIgnoreCase))
-                            action(sav);
+                        try
+                        {
+                            using var p = Process.GetProcessById((int)pid);
+                            if (p.ProcessName.Contains(processKeyword, StringComparison.OrdinalIgnoreCase))
+                                action(sav);
+                        }
+                        catch { }
                     }
-                    catch { }
+                }
+                finally
+                {
+                    ReleaseCom(ctrl);
                 }
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(sessionEnum);
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
     }
 
     private static void OperateOnAppSession(int targetPid, Action<ISimpleAudioVolume> action)
     {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        object? obj = null;
+        IAudioSessionEnumerator? sessionEnum = null;
         try
         {
-            var en = CreateEnumerator();
+            en = CreateEnumerator();
             if (en == null) return;
-            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var dev) != 0 || dev == null)
+            if (en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev) != 0 || dev == null)
                 return;
 
             var iidMgr = IID_IAudioSessionManager2;
-            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out var obj) != 0 || obj is not IAudioSessionManager2 mgr)
+            if (dev.Activate(ref iidMgr, CLSCTX_ALL, IntPtr.Zero, out obj) != 0 || obj is not IAudioSessionManager2 mgr)
                 return;
 
-            if (mgr.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+            if (mgr.GetSessionEnumerator(out sessionEnum) != 0 || sessionEnum == null)
                 return;
 
             sessionEnum.GetCount(out int count);
             for (int i = 0; i < count; i++)
             {
-                if (sessionEnum.GetSession(i, out var ctrl) == 0 &&
-                    ctrl is IAudioSessionControl2 c2 &&
-                    c2.GetProcessId(out uint pid) == 0 &&
-                    (int)pid == targetPid &&
-                    ctrl is ISimpleAudioVolume sav)
+                IAudioSessionControl? ctrl = null;
+                try
                 {
-                    action(sav);
+                    if (sessionEnum.GetSession(i, out ctrl) == 0 &&
+                        ctrl is IAudioSessionControl2 c2 &&
+                        c2.GetProcessId(out uint pid) == 0 &&
+                        (int)pid == targetPid &&
+                        ctrl is ISimpleAudioVolume sav)
+                    {
+                        action(sav);
+                    }
+                }
+                finally
+                {
+                    ReleaseCom(ctrl);
                 }
             }
         }
         catch { }
+        finally
+        {
+            ReleaseCom(sessionEnum);
+            ReleaseCom(obj);
+            ReleaseCom(dev);
+            ReleaseCom(en);
+        }
     }
 }

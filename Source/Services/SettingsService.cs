@@ -33,6 +33,15 @@ public static class SettingsService
                 if (loaded != null)
                 {
                     loaded.PinnedApps ??= CreateDefaultApps();
+                    loaded.HomeWidgetOrder ??= new() { "QuickTools", "MusicWeather", "HomeDock", "Notifications" };
+                    loaded.HiddenHomeWidgets ??= new();
+                    if (loaded.ConfigRevision < 2)
+                    {
+                        loaded.AutoOptimizeRamOnThreshold = true;
+                        loaded.RamThresholdPercent = 80;
+                        loaded.ConfigRevision = 2;
+                        Save(loaded);
+                    }
                     return loaded;
                 }
             }
@@ -43,7 +52,7 @@ public static class SettingsService
         }
 
         isFirstRun = true;
-        var defaults = new AppSettings { PinnedApps = CreateDefaultApps() };
+        var defaults = new AppSettings { PinnedApps = CreateDefaultApps(), ConfigRevision = 2 };
         Save(defaults);
         return defaults;
     }

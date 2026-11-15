@@ -1,8 +1,12 @@
 using System;
 using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using DesktopIsland.Models;
@@ -179,35 +183,150 @@ public static class QuickToolsService
         return false;
     }
 
-    public static async Task<(bool HasUpdate, string LatestTag, string ReleaseUrl)> CheckForGithubUpdateAsync()
+    private static string? _lastReleaseEtag;
+    private static (bool HasUpdate, string LatestTag, string ReleaseUrl, string ZipDownloadUrl) _cachedUpdateResult =
+        (false, string.Empty, string.Empty, string.Empty);
+
+    public static async Task<(bool HasUpdate, string LatestTag, string ReleaseUrl, string ZipDownloadUrl)> CheckForGithubUpdateAsync()
     {
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/Cat0rg/DesktopIsland-/releases/latest");
             req.Headers.UserAgent.ParseAdd("DesktopIsland/1.6");
+            if (!string.IsNullOrEmpty(_lastReleaseEtag))
+                req.Headers.TryAddWithoutValidation("If-None-Match", _lastReleaseEtag);
+
             using var resp = await Http.SendAsync(req);
-            if (!resp.IsSuccessStatusCode) return (false, string.Empty, string.Empty);
+            if (resp.StatusCode == HttpStatusCode.NotModified)
+                return _cachedUpdateResult;
+            if (!resp.IsSuccessStatusCode)
+                return (false, string.Empty, string.Empty, string.Empty);
+
+            if (resp.Headers.ETag != null)
+                _lastReleaseEtag = resp.Headers.ETag.ToString();
 
             var json = await resp.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("tag_name", out var tagEl)) return (false, string.Empty, string.Empty);
+            if (!doc.RootElement.TryGetProperty("tag_name", out var tagEl))
+                return (false, string.Empty, string.Empty, string.Empty);
+
             string tag = tagEl.GetString() ?? string.Empty;
             string cleanTag = tag.TrimStart('v', 'V');
             string htmlUrl = doc.RootElement.TryGetProperty("html_url", out var urlEl)
                 ? (urlEl.GetString() ?? "https://github.com/Cat0rg/DesktopIsland-/releases/latest")
                 : "https://github.com/Cat0rg/DesktopIsland-/releases/latest";
 
-            var currentVer = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 4, 0, 0);
+            string zipUrl = "https://github.com/Cat0rg/DesktopIsland-/releases/latest/download/DesktopIsland.zip";
+            if (doc.RootElement.TryGetProperty("assets", out var assetsEl) && assetsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var asset in assetsEl.EnumerateArray())
+                {
+                    string? name = asset.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+                    string? dl = asset.TryGetProperty("browser_download_url", out var dlEl) ? dlEl.GetString() : null;
+                    if (!string.IsNullOrEmpty(name) && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(dl))
+                    {
+                        zipUrl = dl;
+                        break;
+                    }
+                }
+            }
+
+            var currentVer = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 6, 0, 0);
+            bool hasUpdate = false;
             if (Version.TryParse(cleanTag, out var remoteVer))
             {
                 var normCur = new Version(currentVer.Major, currentVer.Minor, Math.Max(0, currentVer.Build));
                 var normRem = new Version(remoteVer.Major, remoteVer.Minor, Math.Max(0, remoteVer.Build));
-                if (normRem > normCur)
-                    return (true, tag, htmlUrl);
+                hasUpdate = normRem > normCur;
             }
+
+            _cachedUpdateResult = (hasUpdate, tag, htmlUrl, zipUrl);
+            return _cachedUpdateResult;
         }
         catch { }
-        return (false, string.Empty, string.Empty);
+        return (false, string.Empty, string.Empty, string.Empty);
+    }
+
+    public static async Task<bool> DownloadAndApplyGithubUpdateAsync(string? zipUrl)
+    {
+        string url = string.IsNullOrWhiteSpace(zipUrl)
+            ? "https://github.com/Cat0rg/DesktopIsland-/releases/latest/download/DesktopIsland.zip"
+            : zipUrl;
+
+        string workDir = Path.Combine(Path.GetTempPath(), "DesktopIsland_SelfUpdate");
+        string zipFile = Path.Combine(workDir, "DesktopIsland.zip");
+        string extractDir = Path.Combine(workDir, "unzipped");
+
+        try
+        {
+            if (Directory.Exists(workDir))
+                Directory.Delete(workDir, recursive: true);
+            Directory.CreateDirectory(workDir);
+
+            using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                req.Headers.UserAgent.ParseAdd("DesktopIsland/1.6");
+                using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                if (!resp.IsSuccessStatusCode) return false;
+                await using var fs = new FileStream(zipFile, FileMode.Create, FileAccess.Write, FileShare.None);
+                await resp.Content.CopyToAsync(fs);
+            }
+
+            var info = new FileInfo(zipFile);
+            if (!info.Exists || info.Length < 1024 * 1024)
+                return false;
+
+            ZipFile.ExtractToDirectory(zipFile, extractDir, overwriteFiles: true);
+
+            string? srcAppDir = null;
+            string nestedApp = Path.Combine(extractDir, "App", "DesktopIsland.exe");
+            string rootApp = Path.Combine(extractDir, "DesktopIsland.exe");
+            if (File.Exists(nestedApp))
+                srcAppDir = Path.GetDirectoryName(nestedApp);
+            else if (File.Exists(rootApp))
+                srcAppDir = extractDir;
+
+            if (string.IsNullOrEmpty(srcAppDir))
+                return false;
+
+            string destAppDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            string destExe = Path.Combine(destAppDir, "DesktopIsland.exe");
+            int currentPid = Environment.ProcessId;
+            string cmdPath = Path.Combine(Path.GetTempPath(), "DesktopIsland_ApplyUpdate.cmd");
+
+            string script = $@"@echo off
+chcp 65001 >nul
+:waitloop
+tasklist /FI ""PID eq {currentPid}"" 2>nul | find ""{currentPid}"" >nul
+if not errorlevel 1 (
+    timeout /t 1 /nobreak >nul
+    taskkill /F /PID {currentPid} >nul 2>&1
+    goto :waitloop
+)
+xcopy /E /Y /I /Q ""{srcAppDir}\*"" ""{destAppDir}\"" >nul
+rmdir /S /Q ""{workDir}"" >nul 2>&1
+schtasks /Run /TN ""DesktopIsland_AutoStart"" >nul 2>&1
+timeout /t 2 /nobreak >nul
+tasklist /FI ""IMAGENAME eq DesktopIsland.exe"" 2>nul | find /I ""DesktopIsland.exe"" >nul
+if errorlevel 1 (
+    start """" /D ""{destAppDir}"" ""{destExe}""
+)
+del ""%~f0"" >nul 2>&1
+";
+            File.WriteAllText(cmdPath, script, new UTF8Encoding(false));
+
+            Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"\"{cmdPath}\"\"")
+            {
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LoggerService.Error("Self-update download/apply failed.", ex);
+            return false;
+        }
     }
 
     public static void LockPc()

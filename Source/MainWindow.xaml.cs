@@ -177,8 +177,11 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _ramLabelResetTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(3.2) };
     private readonly DispatcherTimer _weatherTimer = new() { Interval = TimeSpan.FromMinutes(30) };
-    private readonly DispatcherTimer _updateTimer = new() { Interval = TimeSpan.FromMinutes(90) };
+    private readonly DispatcherTimer _updateTimer = new() { Interval = TimeSpan.FromMinutes(10) };
     private string _lastNotifiedUpdateTag = string.Empty;
+    private string _pendingUpdateReleaseUrl = string.Empty;
+    private string _pendingUpdateZipUrl = string.Empty;
+    private bool _isInstallingUpdate;
     private readonly DispatcherTimer _gameInputTimer = new() { Interval = TimeSpan.FromMilliseconds(60) };
     private readonly DispatcherTimer _borderAlertResetTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _magnetTimer = new() { Interval = TimeSpan.FromMilliseconds(30) };
@@ -4920,23 +4923,71 @@ public partial class MainWindow : Window
 
     public async Task CheckForUpdatesAsync(bool manual)
     {
-        var (hasUpdate, latestTag, releaseUrl) = await QuickToolsService.CheckForGithubUpdateAsync();
+        var (hasUpdate, latestTag, releaseUrl, zipUrl) = await QuickToolsService.CheckForGithubUpdateAsync();
         if (hasUpdate && !string.IsNullOrEmpty(latestTag))
         {
+            _pendingUpdateReleaseUrl = releaseUrl;
+            _pendingUpdateZipUrl = zipUrl;
+            UpdateAvailableText.Text = $"Доступно обновление {latestTag}";
+            if (UpdateAvailableBanner.Visibility != Visibility.Visible)
+            {
+                UpdateAvailableBanner.Visibility = Visibility.Visible;
+                if (_isExpanded) ScheduleExpandedResize(animate: false);
+            }
+
             if (manual || !string.Equals(latestTag, _lastNotifiedUpdateTag, StringComparison.OrdinalIgnoreCase))
             {
                 _lastNotifiedUpdateTag = latestTag;
                 ShowToast(
                     "⬆",
                     $"Доступно обновление {latestTag}",
-                    actionLabel: "Открыть",
-                    onAction: () => OpenShellTarget(releaseUrl),
+                    actionLabel: "Обновить",
+                    onAction: () => _ = InstallPendingUpdateAsync(),
                     durationMs: 7500);
             }
         }
-        else if (manual)
+        else
         {
-            ShowToast("✓", "Установлена актуальная версия", durationMs: 2600);
+            if (UpdateAvailableBanner.Visibility != Visibility.Collapsed)
+            {
+                UpdateAvailableBanner.Visibility = Visibility.Collapsed;
+                if (_isExpanded) ScheduleExpandedResize(animate: false);
+            }
+            if (manual)
+                ShowToast("✓", "Установлена актуальная версия", durationMs: 2600);
+        }
+    }
+
+    private void InstallUpdateBtn_Click(object sender, RoutedEventArgs e) => _ = InstallPendingUpdateAsync();
+
+    private async Task InstallPendingUpdateAsync()
+    {
+        if (_isInstallingUpdate) return;
+        _isInstallingUpdate = true;
+        InstallUpdateBtn.IsEnabled = false;
+        InstallUpdateBtn.Content = "Загрузка...";
+        ShowToast("⏳", "Скачиваю и устанавливаю обновление...", durationMs: 6000);
+
+        try
+        {
+            bool started = await QuickToolsService.DownloadAndApplyGithubUpdateAsync(_pendingUpdateZipUrl);
+            if (started)
+            {
+                (System.Windows.Application.Current as App)?.ShutdownApplication();
+                return;
+            }
+
+            ShowToast("⚠", "Не удалось скачать автоматически", actionLabel: "GitHub", onAction: () =>
+            {
+                if (!string.IsNullOrWhiteSpace(_pendingUpdateReleaseUrl))
+                    OpenShellTarget(_pendingUpdateReleaseUrl);
+            });
+        }
+        finally
+        {
+            _isInstallingUpdate = false;
+            InstallUpdateBtn.IsEnabled = true;
+            InstallUpdateBtn.Content = "Обновить";
         }
     }
 
